@@ -32,5 +32,5 @@ Three independent scripts, each its own file under `scripts/`:
 In Foundry → **Add-on Modules → Install Module**, paste the manifest URL:
 
 ```
-https://github.com/HeadMaidTypeX-2/ptr-capability-ruler/releases/latest/download/module.json
+https://github.com/HeadMaidTypeX-2/PTRe1-Adjustment-Modules/releases/latest/download/module.json
 ```
