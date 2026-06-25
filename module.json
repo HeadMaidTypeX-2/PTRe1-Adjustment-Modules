@@ -1,14 +1,14 @@
 {
-  "id": "ptr-capability-ruler",
-  "title": "PTU Table Toolkit",
+  "id": "PTRe1-Adjustment-Modules",
+  "title": "PTRe1 Adjustment Modules",
   "description": "A small collection of fixes for a PTU (system id 'ptu') world on Foundry V13/V14: (1) recolors the native token drag-ruler by the token's movement capability; (2) restores ChatMessage#user as an alias of #author so Automated Animations' PTU handler works on V14; (3) mirrors PTU's system.effect into system.description.value so description-extracting modules (e.g. Stylish Shop) can read item text.",
-  "version": "0.5.0",
+  "version": "0.5.3",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "authors": [
-    { "name": "Dettie (for HeadMaidTypeX-2)" }
+    { "name": "HeadMaidTypeX-2" }
   ],
   "esmodules": [
     "scripts/ptr-capability-ruler.js",
