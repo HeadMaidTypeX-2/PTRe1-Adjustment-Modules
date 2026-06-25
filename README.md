@@ -1,10 +1,8 @@
-# PTU Table Toolkit
+# PTRe1-Adjustment-Modules
 
 A small bundle of fixes for a **PTU** (system id `ptu`) world on **Foundry V13/V14**,
 kept in one module so it installs and updates from one place.
 
-> Module id is `ptr-capability-ruler` for historical continuity (it began as the
-> ruler module). The title is broader because it now does more.
 
 ## What's inside
 
