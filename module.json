@@ -1,0 +1,35 @@
+{
+  "id": "ptr-capability-ruler",
+  "title": "PTU Table Toolkit",
+  "description": "A small collection of fixes for a PTU (system id 'ptu') world on Foundry V13/V14: (1) recolors the native token drag-ruler by the token's movement capability; (2) restores ChatMessage#user as an alias of #author so Automated Animations' PTU handler works on V14; (3) mirrors PTU's system.effect into system.description.value so description-extracting modules (e.g. Stylish Shop) can read item text.",
+  "version": "0.5.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "authors": [
+    { "name": "Dettie (for HeadMaidTypeX-2)" }
+  ],
+  "esmodules": [
+    "scripts/ptr-capability-ruler.js",
+    "scripts/aa-user-author-shim.js",
+    "scripts/shop-description-fix.js"
+  ],
+  "relationships": {
+    "requires": [
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "manifest": "https://github.com/ruipin/fvtt-lib-wrapper/releases/latest/download/module.json"
+      }
+    ],
+    "systems": [
+      { "id": "ptu", "type": "system" }
+    ]
+  },
+  "url": "https://github.com/<YOUR-GITHUB-USERNAME>/ptr-capability-ruler",
+  "manifest": "https://github.com/<YOUR-GITHUB-USERNAME>/ptr-capability-ruler/releases/latest/download/module.json",
+  "download": "https://github.com/<YOUR-GITHUB-USERNAME>/ptr-capability-ruler/releases/latest/download/module.zip",
+  "readme": "https://github.com/<YOUR-GITHUB-USERNAME>/ptr-capability-ruler/blob/main/README.md",
+  "bugs": "https://github.com/<YOUR-GITHUB-USERNAME>/ptr-capability-ruler/issues"
+}
