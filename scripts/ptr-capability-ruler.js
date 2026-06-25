@@ -13,7 +13,7 @@
  * Requires: libWrapper.  System: PTR 1e (ptu).
  */
 
-const MODULE_ID = "ptr-capability-ruler";
+const MODULE_ID = "PTRe1-Adjustment-Modules";
 
 /* ------------------------------------------------------------------ *
  *  TUNABLES — edit these to taste.
