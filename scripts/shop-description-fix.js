@@ -16,26 +16,35 @@
  * won't reach it and we'd wrap the shop's own extractor directly instead.
  */
 
-const SOURCE_FIELD = "system.effect";   // where PTU stores the text
+const MODULE_ID = "PTRe1-Adjustment-Modules";
+const SOURCE_FIELD = ["system.effect", "system.referenceEffect", "system.snippet"];   // where PTU stores the text
 const TARGET_KEY   = "description";      // -> system.description.value
+
+function firstNonEmpty(doc) {
+  for (const path of SOURCE_FIELDS) {
+    const v = foundry.utils.getProperty(doc, path);
+    if (typeof v === "string" && v.trim().length) return v;
+  }
+  return null;
+}
 
 Hooks.once("setup", () => {
   if (game.system.id !== "ptu") return;
 
   if (!game.modules.get("lib-wrapper")?.active) {
-    console.error("PTU Table Toolkit | Shop description fix: libWrapper is required but not active.");
+    console.error(`${MODULE_ID} | Shop description fix: libWrapper is required but not active.`);
     return;
   }
 
   libWrapper.register(
-    "PTRe1-Adjustment-Modules",
+    MODULE_ID,
     "CONFIG.Item.documentClass.prototype.prepareDerivedData",
     function (wrapped, ...args) {
       const result = wrapped(...args);
       try {
         const sys = this.system;
-        const text = foundry.utils.getProperty(this, SOURCE_FIELD);
-        if (sys && typeof text === "string" && text.length) {
+        const text = firstNonEmpty(this);
+        if (sys && text){
           const desc = sys[TARGET_KEY];
           if (!desc || typeof desc !== "object") {
             sys[TARGET_KEY] = { value: text };
