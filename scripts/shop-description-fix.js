@@ -28,7 +28,7 @@ Hooks.once("setup", () => {
   }
 
   libWrapper.register(
-    "ptr-capability-ruler",
+    "PTRe1-Adjustment-Modules",
     "CONFIG.Item.documentClass.prototype.prepareDerivedData",
     function (wrapped, ...args) {
       const result = wrapped(...args);
