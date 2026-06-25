@@ -1,24 +1,26 @@
 /**
  * Shop / item-description fix
  * ---------------------------
- * PTU keeps an item's description text in `system.effect`. Most system-agnostic
- * modules — including GlitchSmith's Stylish Shop auto-extractor — read the
- * conventional `system.description.value`, find nothing on a PTU item, and
- * report "No description could be extracted from the source item."
+ * PTU stores an item's descriptive text in one of two fields, depending on how
+ * the item was created:
+ *   - system.effect          : inline / user-entered (or override) text
+ *   - system.referenceEffect : canonical text carried from the compendium reference
+ * Either may hold the description while the other is empty, which is why some
+ * shop items pulled text and others didn't. Most system-agnostic modules
+ * (GlitchSmith's Stylish Shop included) only read system.description.value, which
+ * PTU never populates.
  *
- * At derived-data time we copy `system.effect` into `system.description.value`.
- * This is IN-MEMORY ONLY — prepareDerivedData runs on every load/update and
- * never writes to the database, so the stored item and the PTU data model are
- * left completely untouched.
- *
- * NOTE: This reaches modules that read the LIVE item document. If Stylish Shop
- * reads the item's source data (item.toObject() / item._source) instead, this
- * won't reach it and we'd wrap the shop's own extractor directly instead.
+ * At derived-data time we copy the FIRST non-empty field from SOURCE_FIELDS into
+ * system.description.value. IN-MEMORY ONLY — prepareDerivedData never writes to
+ * the database, so the stored item and the PTU data model are untouched.
  */
 
+// MUST match module.json "id" exactly (case-sensitive).
 const MODULE_ID = "PTRe1-Adjustment-Modules";
-const SOURCE_FIELD = ["system.effect", "system.referenceEffect", "system.snippet"];   // where PTU stores the text
-const TARGET_KEY   = "description";      // -> system.description.value
+
+// Checked in order; first one with real text wins.
+const SOURCE_FIELDS = ["system.effect", "system.referenceEffect", "system.snippet"];
+const TARGET_KEY = "description"; // -> system.description.value
 
 function firstNonEmpty(doc) {
   for (const path of SOURCE_FIELDS) {
@@ -44,7 +46,7 @@ Hooks.once("setup", () => {
       try {
         const sys = this.system;
         const text = firstNonEmpty(this);
-        if (sys && text){
+        if (sys && text) {
           const desc = sys[TARGET_KEY];
           if (!desc || typeof desc !== "object") {
             sys[TARGET_KEY] = { value: text };
@@ -53,12 +55,12 @@ Hooks.once("setup", () => {
           }
         }
       } catch (e) {
-        console.error("PTU Table Toolkit | Shop description fix: failed to mirror description:", e);
+        console.error(`${MODULE_ID} | Shop description fix: failed to mirror description:`, e);
       }
       return result;
     },
     "WRAPPER"
   );
 
-  console.log("PTU Table Toolkit | Shop description fix: mirroring system.effect -> system.description.value (derived).");
+  console.log(`${MODULE_ID} | Shop description fix: mirroring first of [${SOURCE_FIELDS.join(", ")}] -> system.description.value (derived).`);
 });
