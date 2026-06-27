@@ -3,7 +3,7 @@ import { RuleElementForm } from "/systems/ptu/src/module/item/sheet/rule-element
 class ConsumeItemForm extends RuleElementForm {
     /** @override */
     get template() {
-        return "modules/ptr-consume-item/templates/consume-item.hbs";
+        return "modules/PTRe1-Adjustment-Modules/templates/consume-item.hbs";
     }
 
     /** @override */
