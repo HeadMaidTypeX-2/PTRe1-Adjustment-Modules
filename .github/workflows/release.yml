@@ -28,8 +28,8 @@ jobs:
             module.json > module.tmp && mv module.tmp module.json
           echo "--- stamped module.json ---"; cat module.json
 
-      - name: Build module.zip
-        run: zip -r module.zip module.json scripts README.md
+      - - name: Build module.zip
+          run: zip -r module.zip module.json scripts lang templates README.md
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
