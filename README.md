@@ -18,6 +18,16 @@ Three independent scripts, each its own file under `scripts/`:
    conventional `system.description.value` at derived-data time (in memory
    only — nothing is saved), so description-extracting modules like Stylish
    Shop can read item text. *(Requires libWrapper.)*
+4. **`init.js` , `consume-item-form.js`, `consume-item.js`** — Adds a "ConsumeItem" rule element to PTR's Items Rule options. Registers at runtime, no files are edited. On a configurable item/trigger, it finds a target item in the actor's inventory, decrements its system.quantity, and removes the item when the count hits 0. It is embedded-item counterpart to the system's InstantChange (Which can only modify actor data paths, never owned items). 
+Fields
+Trigger — onRoll (default), onTurnStart/End, onCombatStart/End, onRoundStart,
+onCreate, onDelete.
+Selectors — (onRoll only) roll-domain selectors that must match, e.g. move-attack.
+Item UUID — compendium UUID to consume; matched on owned items' sourceId. Blank = self.
+Item Slug — alternative to UUID; matches an owned item by slug (e.g. basic-ball).
+Amount — quantity removed per trigger (resolvable; default 1).
+Remove at 0 — delete the item at 0 (default on).
+Target priority: UUID -> Slug -> self.
 
 ## Requirements
 

@@ -13,7 +13,8 @@
   "esmodules": [
     "scripts/ptr-capability-ruler.js",
     "scripts/aa-user-author-shim.js",
-    "scripts/ptu-adapter.js"
+    "scripts/ptu-adapter.js",
+    "scripts/init.js"
   ],
   "relationships": {
     "requires": [

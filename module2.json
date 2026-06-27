@@ -1,0 +1,30 @@
+{
+  "id": "ptr-consume-item",
+  "title": "PTR Adjustment — Consume Item Rule",
+  "description": "Adds a <strong>ConsumeItem</strong> rule element to the PTR (ptu) system. On a configurable trigger it finds a target item in the actor's inventory, decrements its quantity, and removes it at zero. Pairs with GrantItem (cascade) for single-use scrolls and similar consumables. Registers itself at runtime — no system files are modified.",
+  "version": "1.0.0",
+  "authors": [
+    { "name": "Game of Throhs GM" }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "ptu",
+        "type": "system",
+        "manifest": "https://github.com/righthandofvecna/fvtt-ptr/releases/latest/download/system.json",
+        "compatibility": { "minimum": "13" }
+      }
+    ]
+  },
+  "esmodules": ["scripts/init.js"],
+  "languages": [
+    { "lang": "en", "name": "English", "path": "lang/en.json" }
+  ],
+  "url": "",
+  "manifest": "",
+  "download": ""
+}

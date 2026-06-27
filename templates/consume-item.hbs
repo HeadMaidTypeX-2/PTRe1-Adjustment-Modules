@@ -1,0 +1,71 @@
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.ConsumeItem.Trigger"}}</label>
+    <div class="attached-input">
+        <select name="system.rules.{{index}}.trigger">
+            {{selectOptions ruleTriggers selected=rule.trigger localize=true}}
+        </select>
+    </div>
+</div>
+
+{{#if (eq rule.trigger "onRoll")}}
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.ConsumeItem.Selectors"}}</label>
+    <div class="attached-input">
+        <input type="text" name="system.rules.{{index}}.selectors"
+            value="{{selectorsAsString}}"
+            placeholder="e.g. move-attack, skill-check"/>
+    </div>
+</div>
+{{/if}}
+
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.ConsumeItem.Uuid"}}</label>
+    <div class="attached-input">
+        <input type="text" name="system.rules.{{index}}.uuid" value="{{rule.uuid}}"
+            placeholder="Compendium.ptu.items.Item.xxxx (blank = this item)"/>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.ConsumeItem.TargetSlug"}}</label>
+    <div class="attached-input">
+        <input type="text" name="system.rules.{{index}}.targetSlug" value="{{rule.targetSlug}}"
+            placeholder="e.g. basic-ball (used if no UUID)"/>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.ConsumeItem.Quantity"}}</label>
+    <div class="attached-input">
+        <input type="text" name="system.rules.{{index}}.quantity" value="{{rule.quantity}}"
+            placeholder="1"/>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.ConsumeItem.RemoveAtZero"}}</label>
+    <div class="attached-input">
+        <input type="checkbox" name="system.rules.{{index}}.removeAtZero" {{checked rule.removeAtZero}}/>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.General.Priority"}}</label>
+    <div class="attached-input">
+        <input type="number" name="system.rules.{{index}}.priority" value="{{rule.priority}}"/>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="short">{{localize "PTU.RuleEditor.General.Predicate"}}</label>
+    <div class="attached-input">
+        <button type="button" class="attachment" data-action="toggle-predicate">
+            {{#if predicationIsMultiple}}Multiple{{else}}Complex{{/if}}
+        </button>
+        {{#if predicationIsMultiple}}
+            <input type="text" class="ptu-tagify predicate-list" name="system.rules.{{index}}.predicate" value="{{json rule.predicate}}" data-dtype="JSON"/>
+        {{else}}
+            <input type="text" name="system.rules.{{index}}.predicate" value="{{json rule.predicate}}" />
+        {{/if}}
+    </div>
+</div>

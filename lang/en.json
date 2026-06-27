@@ -1,0 +1,29 @@
+{
+  "RULES": {
+    "Types": {
+      "ConsumeItem": "Consume Item"
+    }
+  },
+  "PTU": {
+    "RuleEditor": {
+      "ConsumeItem": {
+        "Trigger": "Trigger",
+        "Selectors": "Selectors",
+        "Uuid": "Item UUID",
+        "TargetSlug": "Item Slug",
+        "Quantity": "Amount",
+        "RemoveAtZero": "Remove at 0",
+        "Triggers": {
+          "OnCreate": "On Create",
+          "OnDelete": "On Delete",
+          "OnTurnStart": "On Turn Start",
+          "OnTurnEnd": "On Turn End",
+          "OnCombatStart": "On Combat Start",
+          "OnCombatEnd": "On Combat End",
+          "OnRoundStart": "On Round Start",
+          "OnRoll": "On Roll"
+        }
+      }
+    }
+  }
+}
