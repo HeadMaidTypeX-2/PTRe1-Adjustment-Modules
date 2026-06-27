@@ -13,6 +13,7 @@
         "TargetSlug": "Item Slug",
         "Quantity": "Amount",
         "RemoveAtZero": "Remove at 0",
+        "Confirm": "Confirm before removing",
         "Triggers": {
           "OnCreate": "On Create",
           "OnDelete": "On Delete",

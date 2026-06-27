@@ -8,21 +8,18 @@ import { sluggify } from "/systems/ptu/src/util/misc.js";
  * On a configurable trigger, finds a target item in the actor's inventory and decrements its
  * `system.quantity`. When the quantity reaches 0 (or below) the item is removed from the actor.
  *
- * This is the embedded-document counterpart to InstantChange: where InstantChange performs an
- * `actor.update()` on a data path (and therefore cannot reach owned items), ConsumeItem operates
- * directly on the embedded Item collection via update/deleteEmbeddedDocuments.
+ * Embedded-document counterpart to InstantChange (which can only touch actor data paths).
  *
- * Target resolution (priority order):
- *   1. `uuid`       → owned item whose source matches this compendium UUID (item.sourceId).
- *   2. `targetSlug` → owned item whose slug matches.
- *   3. neither      → the item carrying this rule (self).
+ * Target resolution: `uuid` (matched on item.sourceId) -> `targetSlug` -> self.
  *
- * Pairs with GrantItem(cascade): put a ConsumeItem on a single-use scroll, trigger "onRoll", and
- * firing the granted move decrements the scroll; at 0 it deletes itself and the cascade removes
- * the granted move with it.
+ * If `confirm` is true, the trigger does NOT consume immediately. Instead it opens a non-blocking
+ * confirmation dialog; the decrement/removal runs only when the user confirms. This is the safe
+ * choice for attack scrolls: the system applies damage on a LATER "apply damage" click, and that
+ * step re-fetches the move from the actor, so the move (and anything that granted it) must still
+ * exist at apply-time. The user applies damage first, then confirms removal.
  */
 class ConsumeItemRuleElement extends RuleElementPTU {
-    /** Guards against re-entrant deletion (e.g. onDelete targeting self). */
+    /** Guards against re-entrant deletion. */
     static #inFlight = new Set();
 
     /** @override */
@@ -45,19 +42,16 @@ class ConsumeItemRuleElement extends RuleElementPTU {
                 ],
                 initial: "onRoll",
             }),
-            /** Roll-domain selectors; only meaningful when trigger is "onRoll". */
             selectors: new fields.ArrayField(
                 new fields.StringField({ required: true, blank: false, initial: undefined }),
                 { required: false, nullable: false, initial: [] }
             ),
-            /** Compendium UUID of the item to consume. Matched against owned items' sourceId. */
             uuid: new fields.StringField({ required: false, nullable: true, blank: false, initial: null }),
-            /** Slug of the item to consume. Used when no uuid is given. */
             targetSlug: new fields.StringField({ required: false, nullable: true, blank: false, initial: null }),
-            /** How many to remove per trigger. Resolvable; defaults to 1. */
             quantity: new ResolvableValueField({ required: false, nullable: false, initial: 1 }),
-            /** When the resulting quantity is <= 0, delete the item from the actor. */
             removeAtZero: new fields.BooleanField({ required: false, nullable: false, initial: true }),
+            /** When true, prompt for confirmation (non-blocking) before consuming. */
+            confirm: new fields.BooleanField({ required: false, nullable: false, initial: false }),
         };
     }
 
@@ -65,37 +59,13 @@ class ConsumeItemRuleElement extends RuleElementPTU {
     /* Trigger hooks                                */
     /* -------------------------------------------- */
 
-    /* The batched-data hooks are awaited by their callers, so it is safe to perform an async
-       embedded-document operation here. We ignore the passed actorUpdates dict because we mutate
-       the items collection directly rather than the actor's own data. */
-
-    async onCreate() {
-        if (this.trigger === "onCreate") await this.#consume();
-    }
-
-    async onDelete() {
-        if (this.trigger === "onDelete") await this.#consume();
-    }
-
-    async onTurnStart() {
-        if (this.trigger === "onTurnStart") await this.#consume();
-    }
-
-    async onTurnEnd() {
-        if (this.trigger === "onTurnEnd") await this.#consume();
-    }
-
-    async onCombatStart() {
-        if (this.trigger === "onCombatStart") await this.#consume();
-    }
-
-    async onCombatEnd() {
-        if (this.trigger === "onCombatEnd") await this.#consume();
-    }
-
-    async onRoundStart() {
-        if (this.trigger === "onRoundStart") await this.#consume();
-    }
+    async onCreate()      { if (this.trigger === "onCreate")     await this.#consume(); }
+    async onDelete()      { if (this.trigger === "onDelete")     await this.#consume(); }
+    async onTurnStart()   { if (this.trigger === "onTurnStart")  await this.#consume(); }
+    async onTurnEnd()     { if (this.trigger === "onTurnEnd")    await this.#consume(); }
+    async onCombatStart() { if (this.trigger === "onCombatStart")await this.#consume(); }
+    async onCombatEnd()   { if (this.trigger === "onCombatEnd")  await this.#consume(); }
+    async onRoundStart()  { if (this.trigger === "onRoundStart") await this.#consume(); }
 
     /** @override */
     async afterRollAsync(check, _rolls) {
@@ -112,10 +82,6 @@ class ConsumeItemRuleElement extends RuleElementPTU {
     /* Core logic                                   */
     /* -------------------------------------------- */
 
-    /**
-     * Resolve the owned item this rule should consume.
-     * @returns {Item|null}
-     */
     #resolveTarget() {
         const uuid = this.uuid ? this.resolveInjectedProperties(this.uuid) : null;
         if (uuid) {
@@ -132,13 +98,12 @@ class ConsumeItemRuleElement extends RuleElementPTU {
             return this.actor.items.find(i => i.slug === slug) ?? null;
         }
 
-        // Default: the item carrying this rule.
         return this.item ?? null;
     }
 
     /**
-     * Perform the decrement / removal.
-     * @param {Set<string>|string[]} [rollOptions] Roll options for predicate testing.
+     * Entry point: predicate-test, resolve the target, then either prompt or apply directly.
+     * @param {Set<string>|string[]} [rollOptions]
      */
     async #consume(rollOptions) {
         if (this.ignored) return;
@@ -149,10 +114,60 @@ class ConsumeItemRuleElement extends RuleElementPTU {
         if (!this.test(options)) return;
 
         const target = this.#resolveTarget();
-        if (!target?.id) return;
+        if (!target?.id || !this.actor.items.has(target.id)) return;
 
-        // Bail if the target has already left the inventory.
-        if (!this.actor.items.has(target.id)) return;
+        if (this.confirm) {
+            // Fire-and-forget: do NOT await, so the roll/damage pipeline isn't blocked on user input.
+            this.#promptConfirm(target.id);
+            return;
+        }
+
+        await this.#applyConsume(target.id);
+    }
+
+    /**
+     * Open a non-blocking confirmation dialog; on confirm, run the consume.
+     * @param {string} targetId
+     */
+    async #promptConfirm(targetId) {
+        const target = this.actor.items.get(targetId);
+        if (!target) return;
+        if (!this.actor.isOwner) return; // only prompt on a client that owns the actor
+
+        const title = this.label && this.label !== this.item?.name ? this.label : "Consume Item";
+        const grantNote = this.removeAtZero ? " (and anything it granted)" : "";
+        const content =
+            `<p>Finished using <strong>${target.name}</strong>?</p>` +
+            `<p>Confirming removes it from the sheet${grantNote}.</p>` +
+            `<p style="opacity:.7;font-size:.9em">Apply the move's damage first, then confirm.</p>`;
+
+        let confirmed = false;
+        try {
+            const DialogV2 = foundry.applications?.api?.DialogV2;
+            if (DialogV2) {
+                confirmed = await DialogV2.confirm({
+                    window: { title },
+                    content,
+                    modal: false,
+                    rejectClose: false,
+                });
+            } else {
+                confirmed = await Dialog.confirm({ title, content, rejectClose: false });
+            }
+        } catch (error) {
+            confirmed = false;
+        }
+
+        if (confirmed) await this.#applyConsume(targetId);
+    }
+
+    /**
+     * Perform the decrement / removal on a freshly-fetched target.
+     * @param {string} targetId
+     */
+    async #applyConsume(targetId) {
+        const target = this.actor.items.get(targetId);
+        if (!target?.id || !this.actor.items.has(target.id)) return;
 
         const guardKey = `${this.actor.id}:${target.id}`;
         if (ConsumeItemRuleElement.#inFlight.has(guardKey)) return;
