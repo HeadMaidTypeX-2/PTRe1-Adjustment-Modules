@@ -14,7 +14,8 @@
     "scripts/ptr-capability-ruler.js",
     "scripts/aa-user-author-shim.js",
     "scripts/ptu-adapter.js",
-    "scripts/init.js"
+    "scripts/init.js",
+    "scripts/gift-keyword-bridge.js"
   ],
   "languages": [
     { "lang": "en", "name": "English", "path": "lang/en.json" }
