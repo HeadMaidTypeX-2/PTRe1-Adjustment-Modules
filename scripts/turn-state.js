@@ -26,14 +26,25 @@ Hooks.on("deleteCombat", (combat) => reprep(combat));
 /* ── turn-start / turn-end selectors (GM emits) ── */
 async function dispatchTurnEdge(actor, domain) {
   const options = actor.getRollOptions();
+
+  // Reminders — extractReminders IS on globalThis in 4.4.3.37
   for (const r of await globalThis.extractReminders({
     affects: "origin", origin: actor, target: actor, item: null, domains: [domain], options, roll: null,
   })) await ChatMessage.create(r);
 
-  const effects = Object.values((await globalThis.extractApplyEffects({
-    affects: "origin", origin: actor, target: actor, item: null, domains: [domain], options, roll: 0,
-  })).reduce((acc, e) => { if (!acc[e.slug]) acc[e.slug] = e; return acc; }, {}));
-  if (effects.length) await actor.createEmbeddedDocuments("Item", effects, { render: false });
+  // ApplyEffects — extractApplyEffects is NOT global here, so read the synthetics store directly
+  // (mirrors what the native extractApplyEffects does internally).
+  const constructs = actor.synthetics?.applyEffects?.[domain]?.origin ?? [];
+  if (constructs.length) {
+    const fullOptions = [...options, ...actor.getSelfRollOptions("origin")];
+    const raw = (await Promise.all(
+      constructs.map(d => d({ test: fullOptions, resolvables: {}, roll: 0 }))
+    )).flatMap(e => e ?? []);
+    const effects = Object.values(
+      raw.reduce((acc, e) => { if (e?.slug && !acc[e.slug]) acc[e.slug] = e; return acc; }, {})
+    );
+    if (effects.length) await actor.createEmbeddedDocuments("Item", effects, { render: false });
+  }
 }
 Hooks.on("ptu.startTurn", (c) => { if (game.users.activeGM?.id === game.user.id && c?.actor) dispatchTurnEdge(c.actor, "turn-start"); });
 Hooks.on("ptu.endTurn",   (c) => { if (game.users.activeGM?.id === game.user.id && c?.actor) dispatchTurnEdge(c.actor, "turn-end"); });
