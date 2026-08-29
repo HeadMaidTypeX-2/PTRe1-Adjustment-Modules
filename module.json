@@ -16,7 +16,8 @@
     "scripts/ptu-adapter.js",
     "scripts/init.js",
     "scripts/gift-keyword-bridge.js",
-    "scripts/fix-grant-toggle.js"
+    "scripts/fix-grant-toggle.js",
+    "scripts/grant-equip-aware.js"
   ],
   "languages": [
     { "lang": "en", "name": "English", "path": "lang/en.json" }
