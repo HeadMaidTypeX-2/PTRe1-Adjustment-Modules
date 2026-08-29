@@ -17,7 +17,8 @@
     "scripts/init.js",
     "scripts/gift-keyword-bridge.js",
     "scripts/fix-grant-toggle.js",
-    "scripts/grant-equip-aware.js"
+    "scripts/grant-equip-aware.js",
+    "scripts/turn-state.js"
   ],
   "languages": [
     { "lang": "en", "name": "English", "path": "lang/en.json" }
