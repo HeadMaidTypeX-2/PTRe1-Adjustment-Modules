@@ -142,18 +142,44 @@ async function requirementRows(species) {
 /* ─────────────────────────────── actor inspection ──────────────────────────── */
 
 /**
- * The held item's comparison key, or null when nothing is held.
- * `system.heldItem` is free text holding an item NAME ("None" = empty).
+ * Every comparison key for what this Pokémon is holding.
+ *
+ * The Pokémon sheet's "Held Items" panel is not a field — it renders the
+ * actor's owned items of type `item` (pokemon-sheet-compact.hbs:764-773 passes
+ * `items` straight to the item-display partial). So a held item is an owned
+ * document, matched on both its slug and its name.
+ *
+ * `system.heldItem` is also included: it is a free-text field carrying an item
+ * NAME, used by the trainer sheet and the token panel. Older data may sit there.
+ *
+ * @returns {Set<string>}
  */
-function heldItemKey(actor) {
-  const held = actor?.system?.heldItem;
-  if (!held || held === "None") return null;
-  return norm(held) || null;
+function heldItemKeys(actor) {
+  const keys = new Set();
+
+  for (const item of actor?.itemTypes?.item ?? []) {
+    // A stack that has been used up is not held any more.
+    const quantity = Number(item.system?.quantity ?? 1);
+    if (Number.isFinite(quantity) && quantity <= 0) continue;
+
+    for (const candidate of [item.system?.slug, item.slug, item.name]) {
+      const key = norm(candidate);
+      if (key) keys.add(key);
+    }
+  }
+
+  const legacy = actor?.system?.heldItem;
+  if (legacy && legacy !== "None") {
+    const key = norm(legacy);
+    if (key) keys.add(key);
+  }
+
+  return keys;
 }
 
 /* ──────────────────────────── requirement evaluation ───────────────────────── */
 
-function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed }) {
+function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, held }) {
   const text = String(raw ?? "").trim();
   if (!text) return { ok: true };
 
@@ -179,7 +205,7 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed })
       `column instead to make this explicit.`
   );
 
-  return heldItemKey(actor) === key
+  return held.has(key)
     ? { ok: true }
     : { ok: false, reason: `needs held ${prettify(text)}` };
 }
@@ -187,17 +213,17 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed })
 /**
  * @returns {{ok: boolean, reasons: string[]}}
  */
-function evaluate(requirement, actor, speciesSlug, evolutionSlug, gmAllowed) {
+function evaluate(requirement, actor, speciesSlug, evolutionSlug, gmAllowed, held) {
   const reasons = [];
 
   const dropped = requirement?.evolutionItem;
   const requiredKey = norm(dropped?.slug ?? dropped?.name);
-  if (requiredKey && heldItemKey(actor) !== requiredKey) {
+  if (requiredKey && !held.has(requiredKey)) {
     reasons.push(`needs held ${prettify(dropped.slug ?? dropped.name)}`);
   }
 
   for (const entry of requirement?.restrictions ?? []) {
-    const result = checkRestriction(entry, actor, { speciesSlug, evolutionSlug, gmAllowed });
+    const result = checkRestriction(entry, actor, { speciesSlug, evolutionSlug, gmAllowed, held });
     if (!result.ok) reasons.push(result.reason);
   }
 
@@ -220,6 +246,7 @@ async function applyRequirements(data) {
   if (!speciesSlug || !evolutions?.available?.length) return false;
 
   const requirements = await requirementRows(species);
+  const held = heldItemKeys(actor);
   const isGM = !!game.user?.isGM;
 
   for (const entry of evolutions.available) {
@@ -246,19 +273,19 @@ async function applyRequirements(data) {
       continue;
     }
 
-    const { ok, reasons } = evaluate(requirement, actor, speciesSlug, entry.slug, isGM);
+    const { ok, reasons } = evaluate(requirement, actor, speciesSlug, entry.slug, isGM, held);
     entry.ptreBlocked = !ok;
     entry.ptreReasons = reasons;
     // Whether the Pokémon itself meets the conditions, ignoring GM privilege,
     // so a GM is not auto-evolved into a "GM permission" form.
     entry.ptreEarned = isGM
-      ? evaluate(requirement, actor, speciesSlug, entry.slug, false).ok
+      ? evaluate(requirement, actor, speciesSlug, entry.slug, false, held).ok
       : ok;
   }
 
   if (CONFIG.debug?.ptreEvolution) {
     console.debug(
-      `${MODULE_ID} | ${actor.name} (${speciesSlug}) held="${actor.system?.heldItem}"`,
+      `${MODULE_ID} | ${actor.name} (${speciesSlug}) holding: ${[...held].join(", ") || "(nothing)"}`,
       evolutions.available.map((e) => ({
         evolution: e.slug,
         blocked: e.ptreBlocked,
@@ -294,6 +321,71 @@ async function applyRequirements(data) {
   return false;
 }
 
+/* ────────────────────────────── consuming the item ─────────────────────────── */
+
+/** The owned item backing a requirement, or null. Prefers the smallest live stack. */
+function findHeldItem(actor, requiredKey) {
+  const matches = (actor?.itemTypes?.item ?? []).filter((item) => {
+    const quantity = Number(item.system?.quantity ?? 1);
+    if (Number.isFinite(quantity) && quantity <= 0) return false;
+    return [item.system?.slug, item.slug, item.name].some((c) => norm(c) === requiredKey);
+  });
+
+  if (!matches.length) return null;
+  return matches.sort(
+    (a, b) => Number(a.system?.quantity ?? 1) - Number(b.system?.quantity ?? 1)
+  )[0];
+}
+
+/**
+ * Spend the item that unlocked the chosen evolution: decrement by one, and
+ * delete the item when the stack reaches zero. Mirrors this module's own
+ * ConsumeItem rule element.
+ *
+ * Only the item **dropped on the species sheet's Item column** is consumed. A
+ * requirement inferred from free restriction text is a legacy fallback and is
+ * deliberately left alone — spending an item on a fuzzy string match is not
+ * something to do behind the GM's back.
+ */
+async function consumeEvolutionItem(data, result) {
+  const chosen = result?.evolution;
+  const actor = data?.pokemon;
+  const speciesSlug = actor?.species?.slug;
+  if (!chosen?.slug || !speciesSlug || chosen.slug === speciesSlug) return;
+
+  // finalize() is only reached through the Submit button, but guard anyway.
+  if (data.ptreItemConsumed) return;
+  data.ptreItemConsumed = true;
+
+  const requirements = await requirementRows(actor.species);
+  const dropped = requirements.get(chosen.slug)?.evolutionItem;
+  const requiredKey = norm(dropped?.slug ?? dropped?.name);
+  if (!requiredKey) return;
+
+  const target = findHeldItem(actor, requiredKey);
+  if (!target?.id) {
+    console.warn(
+      `${MODULE_ID} | ${actor.name} evolved into ${chosen.slug} but the required ` +
+        `"${prettify(dropped.slug ?? dropped.name)}" was not found to consume.`
+    );
+    return;
+  }
+
+  const current = Number(target.system?.quantity ?? 1);
+  const next = current - 1;
+
+  if (next > 0) {
+    await actor.updateEmbeddedDocuments("Item", [{ _id: target.id, "system.quantity": next }]);
+  } else {
+    await actor.deleteEmbeddedDocuments("Item", [target.id]);
+  }
+
+  console.log(
+    `${MODULE_ID} | ${actor.name} -> ${chosen.slug}: consumed ${target.name} ` +
+      `(${current} -> ${next > 0 ? next : "removed"}).`
+  );
+}
+
 /* ──────────────────────────────── the patch ────────────────────────────────── */
 
 function patchLevelUpData(proto) {
@@ -303,6 +395,23 @@ function patchLevelUpData(proto) {
   if (typeof original !== "function") {
     console.error(`${MODULE_ID} | LevelUpData#refresh not found; evolution gating NOT installed.`);
     return false;
+  }
+
+  const originalFinalize = proto.finalize;
+  if (typeof originalFinalize === "function") {
+    // finalize() is the confirm moment: LevelUpForm's Submit button closes with
+    // {properClose: true}, which is the only path that calls it (sheet.js:83,185).
+    proto.finalize = async function (...args) {
+      const result = await originalFinalize.apply(this, args);
+      try {
+        await consumeEvolutionItem(this, result);
+      } catch (error) {
+        console.error(`${MODULE_ID} | failed to consume the evolution item`, error);
+      }
+      return result;
+    };
+  } else {
+    console.warn(`${MODULE_ID} | LevelUpData#finalize not found; items will NOT be consumed.`);
   }
 
   proto.refresh = async function (...args) {

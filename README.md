@@ -91,7 +91,10 @@ Independent components, each under `scripts/`.
    That's it — no configuration in this module. Clear the row's item to remove the requirement.
 
    **What is checked**
-   - The dropped **Item**, against the actor's `system.heldItem`. Matching ignores case,
+   - The dropped **Item**, against what the Pokémon is holding. The sheet's "Held Items" panel
+     is not a field — it lists the actor's owned items of type `item` — so each is matched on
+     its slug *and* its name, and a stack at quantity 0 does not count. The trainer sheet's
+     `system.heldItem` text field is also honoured for older data. Matching ignores case,
      spacing and punctuation, so `"King's Rock"` matches `kings-rock` and the compendium's
      `"Thunderstone"` matches `thunder-stone`.
    - The **Restriction** text: `male` / `female` against `system.gender`, `gm` (or
@@ -106,6 +109,13 @@ Independent components, each under `scripts/`.
      you are" so the choice is deliberate — this replaces the random pick. GM permission does
      not count toward earning, so a GM is never auto-evolved into a GM-gated form.
    - "Stay as your current species" is never gated.
+   - **Confirming an evolution spends its item.** On Submit, the item attached to the chosen
+     evolution is decremented by one and deleted when the stack hits 0 — the same
+     decrement-and-delete the ConsumeItem rule element uses. With several stacks of the same
+     item, the smallest is spent first. Nothing is consumed if you stay as your current
+     species, if the evolution has no attached item, or if the requirement came from
+     restriction *text* rather than the Item column — spending an item on a fuzzy string match
+     is not done silently. Closing the window with X consumes nothing.
 
    **Editing a species item reaches Pokémon that already exist.** `actor.species` is an owned
    *snapshot* of the species item, taken when the Pokémon was created, and the system never
