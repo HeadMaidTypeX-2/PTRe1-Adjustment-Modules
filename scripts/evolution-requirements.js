@@ -89,6 +89,56 @@ const sourceRowCache = new Map();
 const hasRestrictions = (list) =>
   Array.isArray(list) && list.some((r) => String(r ?? "").trim() !== "");
 
+const bracketDelta = (text) =>
+  (text.match(/[[{]/g)?.length ?? 0) - (text.match(/[\]}]/g)?.length ?? 0);
+
+/**
+ * Reassemble a compound predicate that the species sheet tore apart.
+ *
+ * `_updateObject` stores the Restriction column as
+ * `restrictions.split(",").map(trim)` (species/sheet.js:386), so a compound typed
+ * into that field is shredded on save:
+ *
+ *   ["or", "self:ability:own-tempo", "self:pokemon:shiny"]
+ *     -> ['["or"', '"self:ability:own-tempo"', '"self:pokemon:shiny"]']
+ *
+ * Since separate entries are ANDed, every fragment then fails and the evolution
+ * is blocked forever. This walks the list and rejoins anything between an
+ * unbalanced opening bracket and its closing partner. An unterminated run is
+ * emitted as-is so it still fails closed with a readable message.
+ */
+function normalizeRestrictions(list) {
+  const out = [];
+  let buffer = null;
+  let depth = 0;
+
+  for (const raw of list ?? []) {
+    const text = String(raw ?? "").trim();
+
+    if (buffer === null) {
+      const delta = bracketDelta(text);
+      if (delta > 0) {
+        buffer = text;
+        depth = delta;
+      } else {
+        out.push(text);
+      }
+      continue;
+    }
+
+    buffer += `, ${text}`;
+    depth += bracketDelta(text);
+    if (depth <= 0) {
+      out.push(buffer);
+      buffer = null;
+      depth = 0;
+    }
+  }
+
+  if (buffer !== null) out.push(buffer);
+  return out;
+}
+
 /** The uuid this embedded species item was copied from, if any. */
 function sourceUuidOf(species) {
   return species?._stats?.compendiumSource ?? species?.flags?.core?.sourceId ?? null;
@@ -132,7 +182,7 @@ async function requirementRows(species) {
 
     out.set(row.slug, {
       evolutionItem,
-      restrictions,
+      restrictions: normalizeRestrictions(restrictions),
       fromSource: !row.other?.evolutionItem && !!evolutionItem,
     });
   }
@@ -179,7 +229,7 @@ function ownedIndex(actor) {
   const legacy = actor?.system?.heldItem;
   if (legacy && legacy !== "None") add("item", norm(legacy));
 
-  return { byType, any };
+  return { byType, any, actor };
 }
 
 /** How a requirement of each type should read to a player. */
@@ -191,7 +241,32 @@ const REQUIREMENT_PHRASING = {
   pokeedge: (label) => `needs the ${label} Poké Edge`,
   capability: (label) => `needs the ${label} capability`,
   spiritaction: (label) => `needs the ${label} spirit action`,
+  condition: (label) => `must be ${label}`,
+  effect: (label) => `needs the ${label} effect`,
 };
+
+/**
+ * Is a condition/effect currently on this actor?
+ *
+ * An active condition registers itself two ways in `prepareActorData`
+ * (item/effect-types/condition/document.js:261-266): `actor.conditions.set(id, doc)`
+ * and `actor.rollOptions.conditions[slug] = true`. The roll-option registry is
+ * the live answer, so it is checked first; owned documents are the fallback for
+ * effects that never register.
+ */
+function hasCondition(actor, key) {
+  if (actor?.rollOptions?.conditions?.[key]) return true;
+
+  for (const [optionSlug, on] of Object.entries(actor?.rollOptions?.conditions ?? {})) {
+    if (on && norm(optionSlug) === key) return true;
+  }
+
+  for (const condition of actor?.conditions?.values?.() ?? []) {
+    if ([condition.slug, condition.name].some((c) => norm(c) === key)) return true;
+  }
+
+  return false;
+}
 
 /**
  * Does the actor satisfy a dropped requirement?
@@ -206,6 +281,11 @@ function satisfiesDropped(owned, requirement) {
   const type = requirement.type;
   const satisfied = type ? owned.byType.get(type)?.has(key) ?? false : owned.any.has(key);
   if (satisfied) return { ok: true };
+
+  // A condition may be live on the actor without being matched above.
+  if ((!type || type === "condition" || type === "effect") && hasCondition(owned.actor, key)) {
+    return { ok: true };
+  }
 
   const label = requirement.name ?? prettify(requirement.slug);
   const phrase = REQUIREMENT_PHRASING[type] ?? ((l) => `requires ${l}`);
@@ -280,6 +360,18 @@ function checkComputed(text, actor, owned) {
     return known
       ? { ok: true }
       : { ok: false, reason: `must know a ${prettify(wanted)} move` };
+  }
+
+  const condition = /^(?:condition|effect|status)\s*:\s*(.+)$/i.exec(text);
+  if (condition) {
+    const wanted = norm(condition[1]);
+    const present =
+      hasCondition(actor, wanted) ||
+      owned.byType.get("condition")?.has(wanted) ||
+      owned.byType.get("effect")?.has(wanted);
+    return present
+      ? { ok: true }
+      : { ok: false, reason: `must be ${prettify(condition[1])}` };
   }
 
   const move = /^move\s*:\s*(.+)$/i.exec(text);
@@ -391,7 +483,9 @@ function describePredicate(text) {
 }
 
 function testPredicate(statements, actor, text) {
-  const options = actor?.getRollOptions?.() ?? [];
+  // Conditions live in their own roll-option domain, which getRollOptions()
+  // does not include by default (actor/base.js:430-443).
+  const options = actor?.getRollOptions?.(["conditions"]) ?? [];
 
   const passed = PTUPredicate
     ? new PTUPredicate(statements).test(options)

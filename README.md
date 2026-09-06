@@ -90,7 +90,9 @@ Independent components, each under `scripts/`.
    **How to use it:** open the species item and drop the requirement onto an evolution row's
    **Item** cell. The system's own drop handler only accepts documents of type `item`, so
    `evolution-drop-targets.js` (component 9) widens it to abilities, moves, Poké Edges,
-   capabilities, contest moves and spirit actions — everything a Pokémon can own. Drop Own
+   capabilities, contest moves, spirit actions **and conditions/effects** — everything a
+   Pokémon can own. Drag Poisoned from the PTR Effects compendium onto a row and that
+   evolution is only offered while the Pokémon is poisoned. Drop Own
    Tempo on Lycanroc Dusk and it means "must have Own Tempo". Clear the cell to remove the
    requirement. Conditions that are computed rather than possessed go in the **Restriction**
    column instead.
@@ -109,6 +111,10 @@ Independent components, each under `scripts/`.
      - `male` / `female` — against `system.gender`.
      - `gm` (or `GM Permission`) — selectable by a GM, blocked for players.
      - `item:<slug>` — same as dropping the item on the row.
+     - `condition:<slug>` (also `effect:` or `status:`) — the Pokémon currently has that
+       condition, e.g. `condition:poisoned`, `condition:fainted`. **PTR's slug for "asleep" is
+       `sleep`.** Checked against the live `rollOptions.conditions` registry first, then the
+       `actor.conditions` map, then owned condition/effect documents.
      - `move:<slug>` — knows that move. `movetype:<element>` — knows any move of that type;
        validated against PTR's real element list, so a contest type is rejected rather than
        silently never matching.
@@ -124,6 +130,12 @@ Independent components, each under `scripts/`.
        element injects. Compound predicates go in as JSON:
        `["or", "self:ability:own-tempo", "self:pokemon:shiny"]`. Invalid JSON blocks the
        evolution and says so in the console rather than being read as an item name.
+
+       The sheet stores this column as `restrictions.split(",")`, so a compound you type is
+       shredded into fragments on save. This component reassembles anything between an
+       unbalanced opening bracket and its closing partner, so JSON compounds survive being
+       authored through the UI. **Multiple entries are ANDed**, so `movetype:fairy, loyalty>=4`
+       needs no JSON at all — reach for a predicate only when you want OR or NOT.
      - Any other text is treated as a held-item requirement and logged once, so the
        compendium's bare tags (`Thunderstone`, `Ice Stone`, `Sweet`) keep working — prefer
        dropping the item instead.
@@ -161,8 +173,8 @@ Independent components, each under `scripts/`.
    `evolution.other.evolutionItem`, so dropping an ability on an evolution row instead fell
    through to the ability branch and was quietly added to the species' ability list. This
    wraps `PTUSpeciesSheet#_onDrop`: a drop landing on `.evolution-item` accepts `item`,
-   `ability`, `move`, `contestmove`, `pokeedge`, `capability` and `spiritaction`, and anything
-   else is refused with a notification rather than misfiled. Every other drop passes through
+   `ability`, `move`, `contestmove`, `pokeedge`, `capability`, `spiritaction`, `condition` and
+   `effect`, and anything else is refused with a notification rather than misfiled. Every other drop passes through
    untouched.
 
    The stored shape gains a `type`, which is what lets component 8 tell a *cost* from a

@@ -38,6 +38,8 @@ const ACCEPTED_TYPES = new Set([
   "capability",
   "contestmove",
   "spiritaction",
+  "condition", // Poisoned, Fainted, Sleep, … — from the PTR Effects compendium
+  "effect",
 ]);
 
 /** Is this drop landing on an evolution row's Item cell? */
