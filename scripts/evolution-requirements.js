@@ -1,147 +1,157 @@
 /**
- * Evolution Requirements — gate level-up evolution options on real conditions
- * ---------------------------------------------------------------------------
- * PTR builds the level-up evolution list in LevelUpData#refresh()
- * (src/module/apps/level-up-form/document.js). It calls
- * PokemonGenerator.isEvolutionRestricted() as a gate, but that gate is inert:
+ * Evolution Requirements — gate level-up evolution options on the species item
+ * ----------------------------------------------------------------------------
+ * PTR's species sheet already has everything needed to describe a conditional
+ * evolution, and none of it is enforced:
+ *
+ *   - An **Item** column per evolution row. Dropping an item there stores
+ *     `evolution.other.evolutionItem = { slug, uuid }` (species/sheet.js:319).
+ *     Nothing has ever read it back — `convertToPTUSpecies` even writes it as
+ *     `undefined` (species/document.js:64).
+ *   - A **Restriction** text column, stored as `evolution.other.restrictions`.
+ *
+ * The level-up list is built in LevelUpData#refresh()
+ * (apps/level-up-form/document.js:184-219) and gated by
+ * PokemonGenerator.isEvolutionRestricted(), which is inert twice over:
  *
  *   1. It reacts to exactly "male" / "female" and returns undefined (= allowed)
- *      for every other restriction string, so "GM Permission", "Thunderstone",
- *      "Ice Stone" and "Fire Stone" — all real data in the shipped compendium —
- *      have never done anything.
- *   2. The level-up form calls it as `isEvolutionRestricted(evo, this.pokemon.gender)`
- *      but the signature is `(stage, { gender } = {})`. A bare value is passed
- *      where a destructured object is expected, AND PTUPokemon has no `.gender`
- *      getter (everything else reads `system.gender`), so gender was undefined
- *      twice over. Gender restrictions work in NPC generation and have never
- *      worked on the level-up screen.
+ *      for every other restriction string.
+ *   2. The form calls it as `isEvolutionRestricted(evo, this.pokemon.gender)`,
+ *      but the signature is `(stage, { gender } = {})` — a bare value where an
+ *      object is destructured — and PTUPokemon has no `.gender` getter
+ *      (`system.gender` is the real path). Gender gating works in NPC
+ *      generation and has never worked on the level-up screen.
  *
- * Result: an Eevee at level 25 offers all 19 of its level-25 evolutions and the
- * form picks one AT RANDOM as the default selection.
+ * Result: an Eevee at level 25 offered all 19 of its level-25 evolutions and
+ * preselected one AT RANDOM.
  *
- * This module filters that list instead. Scope is the level-up screen only —
- * random NPC generation is left alone.
+ * This module reads the species item's own fields and filters that list. There
+ * is no per-species data table here — drop an item on the species sheet row and
+ * it becomes a requirement.
  *
  * Presentation:
  *   - Players see only evolutions the Pokémon qualifies for.
  *   - A GM sees every evolution; unmet ones are disabled in the dropdown with
  *     the reason appended to the label.
  *
- * Default selection: if exactly one evolution qualifies it is preselected; if
- * several do, the form defaults to "stay as you are" so the choice is made
- * deliberately rather than rolled. This is what replaces the random pick.
+ * Default selection: exactly one qualifying evolution is preselected; several
+ * means the form defaults to "stay as you are" so the choice is deliberate.
+ * That is what replaces the random pick.
  *
+ * Scope is the level-up screen only — random NPC generation is left alone.
  * Patch strategy: LevelUpData is not exported to game.ptu, so its prototype is
  * captured from the first rendered form via the renderLevelUpForm hook. No
  * system files are edited.
  */
 
-import { EVOLUTION_REQUIREMENTS, ITEM_ALIASES } from "./evolution-requirements-data.js";
-
 const MODULE_ID = "PTRe1-Adjustment-Modules";
 
-const slugify = (s) =>
-  String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+/**
+ * Comparison key: lowercase, alphanumerics only. Collapses the difference
+ * between an item's slug and the free-text held-item name, and between the
+ * compendium's inconsistent restriction spellings:
+ *   "Water Stone" / "water-stone"        -> "waterstone"
+ *   "Thunderstone" / "Thunder Stone"     -> "thunderstone"
+ */
+const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
-/** Unknown tags are warned about once each, not once per render. */
-const warnedTags = new Set();
+/** "water-stone" -> "Water Stone", for player-facing reasons. */
+const prettify = (slug) =>
+  String(slug ?? "")
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 
-/* ────────────────────────────── restriction parsing ────────────────────────── */
+/** Console warnings are emitted once per species/evolution/tag, not per render. */
+const warned = new Set();
+
+const warnOnce = (key, message) => {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`${MODULE_ID} | ${message}`);
+};
+
+/* ─────────────────────────────── actor inspection ──────────────────────────── */
 
 /**
- * @returns {{kind: string, value?: string, raw: string}|null} null = no requirement
+ * The held item's comparison key, or null when nothing is held.
+ * `system.heldItem` is a free-text field holding an item NAME ("None" = empty).
  */
-function parseRestriction(raw) {
-  const text = String(raw ?? "").trim();
-  if (!text) return null; // "" is the system's own "no requirement"
-
-  const slug = slugify(text);
-  if (!slug) return null;
-
-  if (slug === "male" || slug === "female") return { kind: "gender", value: slug, raw: text };
-  if (slug === "gm" || slug === "gm-permission") return { kind: "gm", raw: text };
-
-  const explicitItem = /^item:(.+)$/i.exec(text);
-  if (explicitItem) return { kind: "item", value: slugify(explicitItem[1]), raw: text };
-
-  const alias = ITEM_ALIASES[slug];
-  if (alias) return { kind: "item", value: alias, raw: text };
-
-  return { kind: "unknown", value: slug, raw: text };
-}
-
-/** The held item's slug, or null when nothing is held. */
-function heldItemSlug(actor) {
+function heldItemKey(actor) {
   const held = actor?.system?.heldItem;
   if (!held || held === "None") return null;
-  return slugify(held) || null;
+  return norm(held) || null;
+}
+
+/* ──────────────────────────── requirement evaluation ───────────────────────── */
+
+/**
+ * The item dropped onto this evolution row on the species sheet.
+ * @returns {{key: string, label: string}|null}
+ */
+function itemRequirement(row) {
+  const dropped = row?.other?.evolutionItem;
+  if (!dropped) return null;
+
+  const slug = dropped.slug ?? dropped.name;
+  const key = norm(slug);
+  if (!key) return null;
+
+  return { key, label: prettify(slug) };
 }
 
 /**
+ * One restriction string from the Restriction column.
  * @returns {{ok: boolean, reason?: string}}
  */
-function checkRestriction(restriction, actor, { speciesSlug, evolutionSlug } = {}) {
-  switch (restriction.kind) {
-    case "gender": {
-      const actual = slugify(actor?.system?.gender);
-      if (!actual) return { ok: false, reason: `must be ${restriction.value}` };
-      return actual === restriction.value
-        ? { ok: true }
-        : { ok: false, reason: `must be ${restriction.value}` };
-    }
+function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed }) {
+  const text = String(raw ?? "").trim();
+  if (!text) return { ok: true }; // "" is the system's own "no requirement"
 
-    case "item": {
-      const held = heldItemSlug(actor);
-      const label = restriction.value.replace(/-/g, " ");
-      return held === restriction.value
-        ? { ok: true }
-        : { ok: false, reason: `needs held ${label}` };
-    }
+  const key = norm(text);
+  if (!key) return { ok: true };
 
-    case "gm":
-      return game.user?.isGM ? { ok: true } : { ok: false, reason: "GM permission" };
-
-    case "unknown": {
-      const key = `${speciesSlug}/${evolutionSlug}/${restriction.value}`;
-      if (!warnedTags.has(key)) {
-        warnedTags.add(key);
-        console.warn(
-          `${MODULE_ID} | unrecognised evolution requirement "${restriction.raw}" on ` +
-            `${speciesSlug} -> ${evolutionSlug}; blocking it. Add an alias or an ` +
-            `override in scripts/evolution-requirements-data.js.`
-        );
-      }
-      return { ok: false, reason: `unrecognised requirement "${restriction.raw}"` };
-    }
-
-    default:
-      return { ok: true };
+  if (key === "male" || key === "female") {
+    const actual = norm(actor?.system?.gender);
+    if (actual === key) return { ok: true };
+    return { ok: false, reason: `must be ${key}` };
   }
-}
 
-/** Restrictions for one evolution: an override wins over the species item's own data. */
-function restrictionsFor(speciesSlug, evolutionSlug, speciesEvolutions) {
-  const override = EVOLUTION_REQUIREMENTS[speciesSlug]?.[evolutionSlug];
-  if (override) return override;
-  const row = speciesEvolutions?.find((e) => e.slug === evolutionSlug);
-  return row?.other?.restrictions ?? [];
+  if (key === "gm" || key === "gmpermission") {
+    return gmAllowed ? { ok: true } : { ok: false, reason: "GM permission" };
+  }
+
+  // Anything else is treated as an item the Pokémon must be holding. This makes
+  // the compendium's existing bare tags ("Thunderstone", "Ice Stone", "Fire
+  // Stone", "Sweet") work as written, and fails closed on genuine typos.
+  warnOnce(
+    `${speciesSlug}/${evolutionSlug}/${key}`,
+    `restriction "${text}" on ${speciesSlug} -> ${evolutionSlug} is not a known ` +
+      `keyword; treating it as a held-item requirement. Drop the item on the ` +
+      `species sheet's Item column instead to make this explicit.`
+  );
+
+  return heldItemKey(actor) === key
+    ? { ok: true }
+    : { ok: false, reason: `needs held ${prettify(text)}` };
 }
 
 /**
+ * @param {boolean} gmAllowed whether "GM permission" counts as satisfied
  * @returns {{ok: boolean, reasons: string[]}}
  */
-function evaluateEvolution(speciesSlug, evolutionSlug, speciesEvolutions, actor) {
-  const raw = restrictionsFor(speciesSlug, evolutionSlug, speciesEvolutions);
+function evaluateEvolution(row, actor, speciesSlug, gmAllowed) {
   const reasons = [];
+  const evolutionSlug = row?.slug;
 
-  for (const entry of raw) {
-    const parsed = parseRestriction(entry);
-    if (!parsed) continue;
-    const result = checkRestriction(parsed, actor, { speciesSlug, evolutionSlug });
+  const required = itemRequirement(row);
+  if (required && heldItemKey(actor) !== required.key) {
+    reasons.push(`needs held ${required.label}`);
+  }
+
+  for (const entry of row?.other?.restrictions ?? []) {
+    const result = checkRestriction(entry, actor, { speciesSlug, evolutionSlug, gmAllowed });
     if (!result.ok) reasons.push(result.reason);
   }
 
@@ -162,30 +172,41 @@ function applyRequirements(data) {
   const evolutions = data.evolutions;
   if (!speciesSlug || !evolutions?.available?.length) return false;
 
-  const speciesEvolutions = actor.species.system?.evolutions ?? [];
+  const rows = actor.species.system?.evolutions ?? [];
   const isGM = !!game.user?.isGM;
 
   for (const entry of evolutions.available) {
     // "Stay as you are" is never gated.
     if (entry.slug === speciesSlug) {
       entry.ptreBlocked = false;
+      entry.ptreEarned = false;
       entry.ptreReasons = [];
       continue;
     }
-    const { ok, reasons } = evaluateEvolution(speciesSlug, entry.slug, speciesEvolutions, actor);
+    const row = rows.find((r) => r.slug === entry.slug);
+    const { ok, reasons } = evaluateEvolution(row, actor, speciesSlug, isGM);
     entry.ptreBlocked = !ok;
     entry.ptreReasons = reasons;
+    // Whether the Pokémon itself meets the conditions, ignoring GM privilege.
+    // Preselection rides on this so a GM is not auto-evolved into whatever
+    // single "GM permission" form a species happens to have.
+    entry.ptreEarned = isGM
+      ? evaluateEvolution(row, actor, speciesSlug, false).ok
+      : ok;
   }
 
-  // Players get the filtered list. A GM keeps the full list and sees the
-  // blocked entries disabled in the dropdown instead.
+  // Players get the filtered list. A GM keeps the full list and sees blocked
+  // entries disabled in the dropdown instead.
   if (!isGM) {
     const permitted = evolutions.available.filter((e) => !e.ptreBlocked);
-    evolutions.available = permitted.length ? permitted : evolutions.available.filter((e) => e.slug === speciesSlug);
+    evolutions.available = permitted.length
+      ? permitted
+      : evolutions.available.filter((e) => e.slug === speciesSlug);
   }
 
-  const permitted = evolutions.available.filter((e) => !e.ptreBlocked);
-  const realEvolutions = permitted.filter((e) => e.slug !== speciesSlug);
+  const earned = evolutions.available.filter(
+    (e) => e.ptreEarned && e.slug !== speciesSlug
+  );
   const selfEntry =
     evolutions.available.find((e) => e.slug === speciesSlug) ?? {
       uuid: actor.species.uuid,
@@ -193,9 +214,9 @@ function applyRequirements(data) {
       level: data.level?.current,
     };
 
-  // Exactly one qualifying evolution preselects it; several means the player
-  // chooses, so default to staying put rather than rolling one at random.
-  const target = realEvolutions.length === 1 ? realEvolutions[0] : selfEntry;
+  // One earned evolution preselects it; several means the player chooses, so
+  // default to staying put rather than rolling one at random.
+  const target = earned.length === 1 ? earned[0] : selfEntry;
 
   if (evolutions.current?.slug !== target.slug) {
     evolutions.current = target;

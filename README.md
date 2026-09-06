@@ -72,42 +72,42 @@ Independent components, each under `scripts/`.
    - Start-of-turn prompt — `{ "key": "Reminder", "selectors": ["turn-start"], "message": "…" }`.
    - Apply an effect each turn — `{ "key": "ApplyEffect", "selectors": ["turn-start"], "uuid": "…" }`.
 
-8. **Evolution requirements** — `evolution-requirements.js`,
-   `evolution-requirements-data.js`. Gates the level-up evolution list on conditions the
-   Pokémon actually meets, instead of offering every evolution at once.
+8. **Evolution requirements** — `evolution-requirements.js`. Gates the level-up evolution
+   list on conditions the Pokémon actually meets, read from the species item itself.
 
-   PTR builds that list in `LevelUpData#refresh()` and gates it with
-   `PokemonGenerator.isEvolutionRestricted()`, but that gate never fires: it understands only
-   `"male"` / `"female"` and treats every other restriction string as unrestricted, and the
-   level-up form calls it with a bare value where a `{ gender }` object is expected — against
-   `this.pokemon.gender`, which is not a property (`system.gender` is). So an Eevee at level 25
-   offered all 19 of its level-25 evolutions and the form preselected one **at random**.
+   PTR's species sheet already describes conditional evolutions and nothing enforces it:
+   each evolution row has an **Item** drop target, stored as
+   `evolution.other.evolutionItem = { slug, uuid }`, and a **Restriction** text column stored
+   as `evolution.other.restrictions`. The item field has never been read back — the system's
+   own converter writes it as `undefined`.
 
-   **Restriction grammar** — case- and punctuation-insensitive:
-   - `""` — no requirement (the system's own default).
-   - `male` / `female` — matched against `system.gender`.
-   - `item:<slug>` — matched against `system.heldItem`.
-   - `gm` — GM permission: selectable by a GM, blocked for players.
-   - A bare item name listed in `ITEM_ALIASES` — makes the compendium's existing
-     `Thunderstone`, `Fire Stone`, `Ice Stone` and `Sweet` tags work as written.
-   - Anything else — **blocked**, with a console warning naming the species and tag.
+   Meanwhile `PokemonGenerator.isEvolutionRestricted()` reacts to exactly `"male"` / `"female"`
+   and treats every other restriction as unrestricted, and the level-up form calls it with a
+   bare value where a `{ gender }` object is expected, against `this.pokemon.gender` — not a
+   property (`system.gender` is). So an Eevee at level 25 offered all 19 of its level-25
+   evolutions and preselected one **at random**.
+
+   **How to use it:** open the species item, drop the required item onto an evolution row.
+   That's it — no configuration in this module. Clear the row's item to remove the requirement.
+
+   **What is checked**
+   - The dropped **Item**, against the actor's `system.heldItem`. Matching ignores case,
+     spacing and punctuation, so `"King's Rock"` matches `kings-rock` and the compendium's
+     `"Thunderstone"` matches `thunder-stone`.
+   - The **Restriction** text: `male` / `female` against `system.gender`, `gm` (or
+     `GM Permission`) for GM-only evolutions, blank for none. Any other text is treated as a
+     held-item requirement and logged once, so the compendium's existing bare tags keep
+     working — prefer dropping the item instead.
 
    **Behaviour**
    - Players see only evolutions that qualify; a GM sees all of them, with unmet ones disabled
-     in the dropdown and the reason appended to the label.
-   - Exactly one qualifying evolution is preselected. Several means the form defaults to
-     "stay as you are" so the choice is deliberate — this is what replaces the random pick.
+     in the dropdown and the reason appended ("Vaporeon — needs held Water Stone").
+   - Exactly one *earned* evolution is preselected. Several means the form defaults to "stay as
+     you are" so the choice is deliberate — this replaces the random pick. GM permission does
+     not count toward earning, so a GM is never auto-evolved into a GM-gated form.
    - "Stay as your current species" is never gated.
-   - Requirements live in `EVOLUTION_REQUIREMENTS` (slug-keyed, no UUIDs); an entry there
-     overrides the species item's own restrictions. Species absent from it are untouched.
 
    Scope is the level-up screen only — random NPC generation still uses the system's own path.
-
-   > The Eevee entries in the data file are a **draft, not sourced from PTR** — the shipped
-   > species item carries no restrictions to copy. The three stone lines are the mainline ones
-   > and their items exist; everything else is a `gm` placeholder standing in for a condition
-   > (loyalty, time of day, location) this module cannot yet evaluate. Confirm against
-   > `1e.ptr.wiki` before treating any of it as a rule.
 
 ## Requirements
 
