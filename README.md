@@ -107,6 +107,16 @@ Independent components, each under `scripts/`.
      not count toward earning, so a GM is never auto-evolved into a GM-gated form.
    - "Stay as your current species" is never gated.
 
+   **Editing a species item reaches Pokémon that already exist.** `actor.species` is an owned
+   *snapshot* of the species item, taken when the Pokémon was created, and the system never
+   syncs it. So a requirement you add today would not reach a Pokémon made yesterday. This
+   component falls back to the source species item (via `compendiumSource` / `core.sourceId`)
+   for any evolution row the embedded copy does not describe.
+
+   Set `CONFIG.debug.ptreEvolution = true` in the console to log, per level-up, what each
+   evolution required, whether it was blocked, and whether the requirement came from the
+   embedded copy or the source item.
+
    Scope is the level-up screen only — random NPC generation still uses the system's own path.
 
 ## Requirements
