@@ -2,13 +2,15 @@
   "id": "PTRe1-Adjustment-Modules",
   "title": "PTRe1 Adjustment Modules",
   "description": "A small collection of fixes for a PTU (system id 'ptu') world on Foundry V13/V14: (1) recolors the native token drag-ruler by the token's movement capability; (2) restores ChatMessage#user as an alias of #author so Automated Animations' PTU handler works on V14; (3) mirrors PTU's system.effect into system.description.value so description-extracting modules (e.g. Stylish Shop) can read item text.",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "authors": [
-    { "name": "HeadMaidTypeX-2" }
+    {
+      "name": "HeadMaidTypeX-2"
+    }
   ],
   "esmodules": [
     "scripts/ptr-capability-ruler.js",
@@ -18,10 +20,15 @@
     "scripts/gift-keyword-bridge.js",
     "scripts/fix-grant-toggle.js",
     "scripts/grant-equip-aware.js",
-    "scripts/turn-state.js"
+    "scripts/turn-state.js",
+    "scripts/evolution-requirements.js"
   ],
   "languages": [
-    { "lang": "en", "name": "English", "path": "lang/en.json" }
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
   ],
   "relationships": {
     "requires": [
@@ -32,7 +39,10 @@
       }
     ],
     "systems": [
-      { "id": "ptu", "type": "system" }
+      {
+        "id": "ptu",
+        "type": "system"
+      }
     ]
   },
   "url": "https://github.com/HeadMaidTypeX-2/PTRe1-Adjustment-Modules",

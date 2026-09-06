@@ -72,6 +72,43 @@ Independent components, each under `scripts/`.
    - Start-of-turn prompt — `{ "key": "Reminder", "selectors": ["turn-start"], "message": "…" }`.
    - Apply an effect each turn — `{ "key": "ApplyEffect", "selectors": ["turn-start"], "uuid": "…" }`.
 
+8. **Evolution requirements** — `evolution-requirements.js`,
+   `evolution-requirements-data.js`. Gates the level-up evolution list on conditions the
+   Pokémon actually meets, instead of offering every evolution at once.
+
+   PTR builds that list in `LevelUpData#refresh()` and gates it with
+   `PokemonGenerator.isEvolutionRestricted()`, but that gate never fires: it understands only
+   `"male"` / `"female"` and treats every other restriction string as unrestricted, and the
+   level-up form calls it with a bare value where a `{ gender }` object is expected — against
+   `this.pokemon.gender`, which is not a property (`system.gender` is). So an Eevee at level 25
+   offered all 19 of its level-25 evolutions and the form preselected one **at random**.
+
+   **Restriction grammar** — case- and punctuation-insensitive:
+   - `""` — no requirement (the system's own default).
+   - `male` / `female` — matched against `system.gender`.
+   - `item:<slug>` — matched against `system.heldItem`.
+   - `gm` — GM permission: selectable by a GM, blocked for players.
+   - A bare item name listed in `ITEM_ALIASES` — makes the compendium's existing
+     `Thunderstone`, `Fire Stone`, `Ice Stone` and `Sweet` tags work as written.
+   - Anything else — **blocked**, with a console warning naming the species and tag.
+
+   **Behaviour**
+   - Players see only evolutions that qualify; a GM sees all of them, with unmet ones disabled
+     in the dropdown and the reason appended to the label.
+   - Exactly one qualifying evolution is preselected. Several means the form defaults to
+     "stay as you are" so the choice is deliberate — this is what replaces the random pick.
+   - "Stay as your current species" is never gated.
+   - Requirements live in `EVOLUTION_REQUIREMENTS` (slug-keyed, no UUIDs); an entry there
+     overrides the species item's own restrictions. Species absent from it are untouched.
+
+   Scope is the level-up screen only — random NPC generation still uses the system's own path.
+
+   > The Eevee entries in the data file are a **draft, not sourced from PTR** — the shipped
+   > species item carries no restrictions to copy. The three stone lines are the mainline ones
+   > and their items exist; everything else is a `gm` placeholder standing in for a condition
+   > (loyalty, time of day, location) this module cannot yet evaluate. Confirm against
+   > `1e.ptr.wiki` before treating any of it as a rule.
+
 ## Requirements
 
 - Foundry VTT V13 or V14
