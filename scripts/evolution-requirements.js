@@ -154,32 +154,256 @@ async function requirementRows(species) {
  *
  * @returns {Set<string>}
  */
-function heldItemKeys(actor) {
-  const keys = new Set();
+function ownedIndex(actor) {
+  const byType = new Map();
+  const any = new Set();
 
-  for (const item of actor?.itemTypes?.item ?? []) {
-    // A stack that has been used up is not held any more.
-    const quantity = Number(item.system?.quantity ?? 1);
-    if (Number.isFinite(quantity) && quantity <= 0) continue;
+  const add = (type, key) => {
+    if (!key) return;
+    if (!byType.has(type)) byType.set(type, new Set());
+    byType.get(type).add(key);
+    any.add(key);
+  };
 
-    for (const candidate of [item.system?.slug, item.slug, item.name]) {
-      const key = norm(candidate);
-      if (key) keys.add(key);
+  for (const doc of actor?.items ?? []) {
+    // A stack that has been used up is not held any more. Only items stack.
+    if (doc.type === "item") {
+      const quantity = Number(doc.system?.quantity ?? 1);
+      if (Number.isFinite(quantity) && quantity <= 0) continue;
+    }
+    for (const candidate of [doc.system?.slug, doc.slug, doc.name]) {
+      add(doc.type, norm(candidate));
     }
   }
 
   const legacy = actor?.system?.heldItem;
-  if (legacy && legacy !== "None") {
-    const key = norm(legacy);
-    if (key) keys.add(key);
+  if (legacy && legacy !== "None") add("item", norm(legacy));
+
+  return { byType, any };
+}
+
+/** How a requirement of each type should read to a player. */
+const REQUIREMENT_PHRASING = {
+  item: (label) => `needs held ${label}`,
+  ability: (label) => `needs the ${label} ability`,
+  move: (label) => `must know ${label}`,
+  contestmove: (label) => `must know ${label}`,
+  pokeedge: (label) => `needs the ${label} Poké Edge`,
+  capability: (label) => `needs the ${label} capability`,
+  spiritaction: (label) => `needs the ${label} spirit action`,
+};
+
+/**
+ * Does the actor satisfy a dropped requirement?
+ *
+ * Entries written before the drop target was extended carry no `type`, so those
+ * match against everything the actor owns.
+ */
+function satisfiesDropped(owned, requirement) {
+  const key = norm(requirement?.slug ?? requirement?.name);
+  if (!key) return { ok: true };
+
+  const type = requirement.type;
+  const satisfied = type ? owned.byType.get(type)?.has(key) ?? false : owned.any.has(key);
+  if (satisfied) return { ok: true };
+
+  const label = requirement.name ?? prettify(requirement.slug);
+  const phrase = REQUIREMENT_PHRASING[type] ?? ((l) => `requires ${l}`);
+  return { ok: false, reason: phrase(label) };
+}
+
+/* ─────────────────────── computed restriction keywords ─────────────────────── */
+
+/** PTR's real element types. Some compendium moves carry a *contest* type
+ *  ("tough", "beauty", "smart", "cool", "cute") in `system.type`; those are not
+ *  element types and must not be matched. */
+const ELEMENT_TYPES = new Set([
+  "normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison",
+  "ground", "flying", "psychic", "bug", "rock", "ghost", "dragon", "dark",
+  "steel", "fairy", "shadow", "nuclear",
+]);
+
+const STAT_ALIASES = {
+  hp: "hp", health: "hp",
+  atk: "atk", attack: "atk",
+  def: "def", defense: "def", defence: "def",
+  spatk: "spatk", specialattack: "spatk", spattack: "spatk", spa: "spatk",
+  spdef: "spdef", specialdefense: "spdef", specialdefence: "spdef",
+  spd: "spd", speed: "spd",
+};
+
+const COMPARATORS = {
+  ">": (a, b) => a > b,
+  "<": (a, b) => a < b,
+  ">=": (a, b) => a >= b,
+  "<=": (a, b) => a <= b,
+  "=": (a, b) => a === b,
+  "==": (a, b) => a === b,
+  "!=": (a, b) => a !== b,
+};
+
+/**
+ * Read one stat. `source` picks which number:
+ *   total   — species base plus modifiers (the stat as played)
+ *   levelup — the points the player actually invested (the Tyrogue question)
+ *   value   — base plus base-stat modifiers, before level-up points
+ */
+function statValue(actor, stat, source = "total") {
+  const block = actor?.system?.stats?.[stat];
+  if (!block) return null;
+  const raw = source === "levelup" ? block.levelUp : block[source];
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Computed restrictions that roll options cannot express.
+ *
+ *   movetype:fairy           knows any move of that element type
+ *   move:aqua-tail           knows that specific move
+ *   stat:atk>def             compare stats as played
+ *   stat:levelup:atk>def     compare the points the player invested
+ *   loyalty>=4               numeric compare on system.loyalty / friendship
+ *
+ * @returns {{ok: boolean, reason?: string}|null} null = not one of these
+ */
+function checkComputed(text, actor, owned) {
+  const moveType = /^move-?type\s*:\s*(.+)$/i.exec(text);
+  if (moveType) {
+    const wanted = norm(moveType[1]);
+    if (!ELEMENT_TYPES.has(wanted)) {
+      return { ok: false, reason: `unknown move type "${moveType[1].trim()}"` };
+    }
+    const known = (actor?.itemTypes?.move ?? []).some(
+      (m) => norm(m.system?.type) === wanted
+    );
+    return known
+      ? { ok: true }
+      : { ok: false, reason: `must know a ${prettify(wanted)} move` };
   }
 
-  return keys;
+  const move = /^move\s*:\s*(.+)$/i.exec(text);
+  if (move) {
+    const wanted = norm(move[1]);
+    return owned.byType.get("move")?.has(wanted)
+      ? { ok: true }
+      : { ok: false, reason: `must know ${prettify(move[1])}` };
+  }
+
+  const stat = /^stat\s*:\s*(?:(total|levelup|value)\s*:\s*)?([a-z]+)\s*(>=|<=|!=|==|=|>|<)\s*([a-z]+|\d+)\s*$/i
+    .exec(text);
+  if (stat) {
+    const [, source = "total", leftName, op, rightRaw] = stat;
+    const left = STAT_ALIASES[norm(leftName)];
+    if (!left) return { ok: false, reason: `unknown stat "${leftName}"` };
+
+    const leftValue = statValue(actor, left, norm(source) || "total");
+    const isNumber = /^\d+$/.test(rightRaw);
+    const right = isNumber ? null : STAT_ALIASES[norm(rightRaw)];
+    if (!isNumber && !right) return { ok: false, reason: `unknown stat "${rightRaw}"` };
+
+    const rightValue = isNumber
+      ? Number(rightRaw)
+      : statValue(actor, right, norm(source) || "total");
+
+    if (leftValue === null || rightValue === null) {
+      return { ok: false, reason: `stats unavailable for "${text}"` };
+    }
+
+    const passed = COMPARATORS[op](leftValue, rightValue);
+    const rightLabel = isNumber ? rightRaw : prettify(right);
+    const qualifier = norm(source) === "levelup" ? "invested " : "";
+    return passed
+      ? { ok: true }
+      : { ok: false, reason: `needs ${qualifier}${prettify(left)} ${op} ${rightLabel}` };
+  }
+
+  const numeric = /^(loyalty|friendship|level)\s*(>=|<=|!=|==|=|>|<)\s*(\d+)\s*$/i.exec(text);
+  if (numeric) {
+    const [, field, op, target] = numeric;
+    const key = norm(field);
+    const actual = Number(
+      key === "level" ? actor?.system?.level?.current : actor?.system?.[key]
+    );
+    if (!Number.isFinite(actual)) {
+      return { ok: false, reason: `${key} unavailable` };
+    }
+    return COMPARATORS[op](actual, Number(target))
+      ? { ok: true }
+      : { ok: false, reason: `needs ${key} ${op} ${target}` };
+  }
+
+  return null;
+}
+
+/* ─────────────────────────── roll-option predicates ────────────────────────── */
+
+/**
+ * PTR's own predicate class, imported at setup. Without it a single statement
+ * still works as a plain roll-option lookup; only and/or/not and numeric
+ * comparisons need the real engine.
+ */
+let PTUPredicate = null;
+
+/**
+ * Does this restriction read as a roll-option statement rather than an item name?
+ *
+ * JSON is accepted so the Restriction column can hold a full predicate, e.g.
+ *   ["or", "self:ability:own-tempo", "self:types:rock"]
+ * A bare statement is recognised by its colon, which no item name contains.
+ *
+ * @returns {Array|null} predicate statements, or null if this is not a predicate
+ */
+const PREDICATE_OPERATORS = new Set([
+  "and", "or", "not", "nand", "nor", "xor", "if", "iff",
+  "eq", "ne", "gt", "gte", "lt", "lte",
+]);
+
+function parsePredicate(text) {
+  if (text.startsWith("[") || text.startsWith("{")) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return "malformed";
+    }
+    if (!Array.isArray(parsed)) return [parsed];
+    // ["or", a, b] is ONE compound statement; ["self:a", "self:b"] is two.
+    return PREDICATE_OPERATORS.has(parsed[0]) ? [parsed] : parsed;
+  }
+  return text.includes(":") ? [text] : null;
+}
+
+/** Turn a statement into something a player can act on. */
+function describePredicate(text) {
+  const ability = /^self:ability:(.+)$/i.exec(text);
+  if (ability) return `needs the ${prettify(ability[1])} ability`;
+
+  const type = /^self:types:(.+)$/i.exec(text);
+  if (type) return `must be ${prettify(type[1])} type`;
+
+  if (/^self:pokemon:shiny$/i.test(text)) return "must be shiny";
+
+  const edge = /^pokeedge:(.+)$/i.exec(text);
+  if (edge) return `needs the ${prettify(edge[1])} Poké Edge`;
+
+  return `requires ${text}`;
+}
+
+function testPredicate(statements, actor, text) {
+  const options = actor?.getRollOptions?.() ?? [];
+
+  const passed = PTUPredicate
+    ? new PTUPredicate(statements).test(options)
+    : statements.every((s) => typeof s === "string" && options.includes(s));
+
+  if (passed) return { ok: true };
+  return { ok: false, reason: describePredicate(typeof statements[0] === "string" ? statements[0] : text) };
 }
 
 /* ──────────────────────────── requirement evaluation ───────────────────────── */
 
-function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, held }) {
+function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, owned }) {
   const text = String(raw ?? "").trim();
   if (!text) return { ok: true };
 
@@ -195,6 +419,36 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, h
     return gmAllowed ? { ok: true } : { ok: false, reason: "GM permission" };
   }
 
+  // Explicit held-item requirement, equivalent to dropping the item on the row.
+  const explicitItem = /^item:(.+)$/i.exec(text);
+  if (explicitItem) {
+    const wanted = norm(explicitItem[1]);
+    return owned.byType.get("item")?.has(wanted)
+      ? { ok: true }
+      : { ok: false, reason: `needs held ${prettify(explicitItem[1])}` };
+  }
+
+  // Computed conditions that roll options cannot express: move type, stat
+  // comparisons, loyalty thresholds. Checked before the predicate branch because
+  // several of these also contain a colon.
+  const computed = checkComputed(text, actor, owned);
+  if (computed) return computed;
+
+  // A roll-option statement, handed to the system's own predicate engine. This
+  // covers everything PTR already publishes about an actor — `self:types:fairy`,
+  // `self:ability:own-tempo`, `self:pokemon:shiny`, `self:atk:stage:2`,
+  // `pokeedge:<slug>` — plus anything a rule element injects.
+  const statements = parsePredicate(text);
+  if (statements === "malformed") {
+    warnOnce(
+      `${speciesSlug}/${evolutionSlug}/badjson`,
+      `restriction on ${speciesSlug} -> ${evolutionSlug} looks like a predicate but is not ` +
+        `valid JSON: ${text}`
+    );
+    return { ok: false, reason: "malformed requirement — see console" };
+  }
+  if (statements) return testPredicate(statements, actor, text);
+
   // Anything else is treated as an item the Pokémon must hold, so the
   // compendium's bare tags ("Thunderstone", "Ice Stone", "Sweet") work as
   // written. Genuine typos fail closed and are logged once.
@@ -205,7 +459,7 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, h
       `column instead to make this explicit.`
   );
 
-  return held.has(key)
+  return owned.byType.get("item")?.has(key)
     ? { ok: true }
     : { ok: false, reason: `needs held ${prettify(text)}` };
 }
@@ -213,17 +467,17 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, h
 /**
  * @returns {{ok: boolean, reasons: string[]}}
  */
-function evaluate(requirement, actor, speciesSlug, evolutionSlug, gmAllowed, held) {
+function evaluate(requirement, actor, speciesSlug, evolutionSlug, gmAllowed, owned) {
   const reasons = [];
 
   const dropped = requirement?.evolutionItem;
-  const requiredKey = norm(dropped?.slug ?? dropped?.name);
-  if (requiredKey && !held.has(requiredKey)) {
-    reasons.push(`needs held ${prettify(dropped.slug ?? dropped.name)}`);
+  if (dropped) {
+    const result = satisfiesDropped(owned, dropped);
+    if (!result.ok) reasons.push(result.reason);
   }
 
   for (const entry of requirement?.restrictions ?? []) {
-    const result = checkRestriction(entry, actor, { speciesSlug, evolutionSlug, gmAllowed, held });
+    const result = checkRestriction(entry, actor, { speciesSlug, evolutionSlug, gmAllowed, owned });
     if (!result.ok) reasons.push(result.reason);
   }
 
@@ -246,7 +500,7 @@ async function applyRequirements(data) {
   if (!speciesSlug || !evolutions?.available?.length) return false;
 
   const requirements = await requirementRows(species);
-  const held = heldItemKeys(actor);
+  const owned = ownedIndex(actor);
   const isGM = !!game.user?.isGM;
 
   for (const entry of evolutions.available) {
@@ -273,19 +527,19 @@ async function applyRequirements(data) {
       continue;
     }
 
-    const { ok, reasons } = evaluate(requirement, actor, speciesSlug, entry.slug, isGM, held);
+    const { ok, reasons } = evaluate(requirement, actor, speciesSlug, entry.slug, isGM, owned);
     entry.ptreBlocked = !ok;
     entry.ptreReasons = reasons;
     // Whether the Pokémon itself meets the conditions, ignoring GM privilege,
     // so a GM is not auto-evolved into a "GM permission" form.
     entry.ptreEarned = isGM
-      ? evaluate(requirement, actor, speciesSlug, entry.slug, false, held).ok
+      ? evaluate(requirement, actor, speciesSlug, entry.slug, false, owned).ok
       : ok;
   }
 
   if (CONFIG.debug?.ptreEvolution) {
     console.debug(
-      `${MODULE_ID} | ${actor.name} (${speciesSlug}) holding: ${[...held].join(", ") || "(nothing)"}`,
+      `${MODULE_ID} | ${actor.name} (${speciesSlug}) owns: ${[...owned.any].join(", ") || "(nothing)"}`,
       evolutions.available.map((e) => ({
         evolution: e.slug,
         blocked: e.ptreBlocked,
@@ -361,6 +615,11 @@ async function consumeEvolutionItem(data, result) {
   const dropped = requirements.get(chosen.slug)?.evolutionItem;
   const requiredKey = norm(dropped?.slug ?? dropped?.name);
   if (!requiredKey) return;
+
+  // Only a real item is a cost. An ability, move or Poké Edge is a condition and
+  // must never be decremented. Entries with no recorded type predate the extended
+  // drop target; findHeldItem only searches itemTypes.item, so they stay safe.
+  if (dropped.type && dropped.type !== "item") return;
 
   const target = findHeldItem(actor, requiredKey);
   if (!target?.id) {
@@ -442,6 +701,18 @@ function patchLevelUpData(proto) {
  */
 Hooks.once("setup", async () => {
   if (game.system.id !== "ptu") return;
+
+  // Optional: without it, single roll-option statements still work as a plain
+  // lookup — only and/or/not and numeric comparisons need the real engine.
+  try {
+    ({ PTUPredicate } = await import("/systems/ptu/src/module/system/predication.js"));
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | PTUPredicate unavailable; compound predicates in evolution ` +
+        `restrictions will not work.`,
+      error
+    );
+  }
 
   try {
     const { LevelUpData } = await import(

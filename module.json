@@ -2,7 +2,7 @@
   "id": "PTRe1-Adjustment-Modules",
   "title": "PTRe1 Adjustment Modules",
   "description": "A small collection of fixes for a PTU (system id 'ptu') world on Foundry V13/V14: (1) recolors the native token drag-ruler by the token's movement capability; (2) restores ChatMessage#user as an alias of #author so Automated Animations' PTU handler works on V14; (3) mirrors PTU's system.effect into system.description.value so description-extracting modules (e.g. Stylish Shop) can read item text.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
@@ -21,7 +21,8 @@
     "scripts/fix-grant-toggle.js",
     "scripts/grant-equip-aware.js",
     "scripts/turn-state.js",
-    "scripts/evolution-requirements.js"
+    "scripts/evolution-requirements.js",
+    "scripts/evolution-drop-targets.js"
   ],
   "languages": [
     {

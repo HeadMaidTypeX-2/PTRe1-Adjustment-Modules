@@ -87,20 +87,46 @@ Independent components, each under `scripts/`.
    property (`system.gender` is). So an Eevee at level 25 offered all 19 of its level-25
    evolutions and preselected one **at random**.
 
-   **How to use it:** open the species item, drop the required item onto an evolution row.
-   That's it — no configuration in this module. Clear the row's item to remove the requirement.
+   **How to use it:** open the species item and drop the requirement onto an evolution row's
+   **Item** cell. The system's own drop handler only accepts documents of type `item`, so
+   `evolution-drop-targets.js` (component 9) widens it to abilities, moves, Poké Edges,
+   capabilities, contest moves and spirit actions — everything a Pokémon can own. Drop Own
+   Tempo on Lycanroc Dusk and it means "must have Own Tempo". Clear the cell to remove the
+   requirement. Conditions that are computed rather than possessed go in the **Restriction**
+   column instead.
 
    **What is checked**
-   - The dropped **Item**, against what the Pokémon is holding. The sheet's "Held Items" panel
-     is not a field — it lists the actor's owned items of type `item` — so each is matched on
-     its slug *and* its name, and a stack at quantity 0 does not count. The trainer sheet's
-     `system.heldItem` text field is also honoured for older data. Matching ignores case,
-     spacing and punctuation, so `"King's Rock"` matches `kings-rock` and the compendium's
-     `"Thunderstone"` matches `thunder-stone`.
-   - The **Restriction** text: `male` / `female` against `system.gender`, `gm` (or
-     `GM Permission`) for GM-only evolutions, blank for none. Any other text is treated as a
-     held-item requirement and logged once, so the compendium's existing bare tags keep
-     working — prefer dropping the item instead.
+   - The dropped **requirement**, against what the Pokémon owns. Matching is scoped to the
+     dropped document's own type, so an ability requirement looks at the actor's abilities and
+     an item requirement at its items. Items are the "Held Items" panel, which is not a field —
+     it lists owned documents of type `item` — and a stack at quantity 0 does not count. The
+     trainer sheet's `system.heldItem` text field is also honoured for older data. Matching
+     ignores case, spacing and punctuation, so `"King's Rock"` matches `kings-rock` and the
+     compendium's `"Thunderstone"` matches `thunder-stone`. Rows written before the drop target
+     was widened carry no type and are matched against everything the actor owns.
+   - The **Restriction** text, in this order:
+     - blank — no requirement.
+     - `male` / `female` — against `system.gender`.
+     - `gm` (or `GM Permission`) — selectable by a GM, blocked for players.
+     - `item:<slug>` — same as dropping the item on the row.
+     - `move:<slug>` — knows that move. `movetype:<element>` — knows any move of that type;
+       validated against PTR's real element list, so a contest type is rejected rather than
+       silently never matching.
+     - `stat:atk>def` — compares stats as played. `stat:levelup:atk>def` compares the points
+       the player actually invested, which is the Tyrogue question; `stat:value:` uses the
+       pre-level-up figure. Operators `> < >= <= = !=`, and the right side may be another stat
+       or a number (`stat:spatk>=20`).
+     - `loyalty>=4`, `friendship>=N`, `level>=N` — numeric comparisons on the actor.
+     - **Anything containing a colon is a roll-option statement**, handed to PTR's own
+       `PTUPredicate` and tested against `actor.getRollOptions()`. That covers everything the
+       system already publishes about an actor — `self:types:fairy`, `self:ability:own-tempo`,
+       `self:pokemon:shiny`, `self:atk:stage:2`, `pokeedge:<slug>` — plus anything a rule
+       element injects. Compound predicates go in as JSON:
+       `["or", "self:ability:own-tempo", "self:pokemon:shiny"]`. Invalid JSON blocks the
+       evolution and says so in the console rather than being read as an item name.
+     - Any other text is treated as a held-item requirement and logged once, so the
+       compendium's bare tags (`Thunderstone`, `Ice Stone`, `Sweet`) keep working — prefer
+       dropping the item instead.
 
    **Behaviour**
    - Players see only evolutions that qualify; a GM sees all of them, with unmet ones disabled
@@ -109,8 +135,9 @@ Independent components, each under `scripts/`.
      you are" so the choice is deliberate — this replaces the random pick. GM permission does
      not count toward earning, so a GM is never auto-evolved into a GM-gated form.
    - "Stay as your current species" is never gated.
-   - **Confirming an evolution spends its item.** On Submit, the item attached to the chosen
-     evolution is decremented by one and deleted when the stack hits 0 — the same
+   - **Confirming an evolution spends its item — and only an item.** An ability, move or Poké
+     Edge attached to a row is a *condition*, never a cost, and is never touched. On Submit, an
+     attached document of type `item` is decremented by one and deleted when the stack hits 0 — the same
      decrement-and-delete the ConsumeItem rule element uses. With several stacks of the same
      item, the smallest is spent first. Nothing is consumed if you stay as your current
      species, if the evolution has no attached item, or if the requirement came from
@@ -128,6 +155,18 @@ Independent components, each under `scripts/`.
    embedded copy or the source item.
 
    Scope is the level-up screen only — random NPC generation still uses the system's own path.
+
+9. **`evolution-drop-targets.js`** — widens the species sheet's per-evolution **Item** drop
+   target. The system's `_onDrop` is a `switch (item.type)` in which only `case "item"` writes
+   `evolution.other.evolutionItem`, so dropping an ability on an evolution row instead fell
+   through to the ability branch and was quietly added to the species' ability list. This
+   wraps `PTUSpeciesSheet#_onDrop`: a drop landing on `.evolution-item` accepts `item`,
+   `ability`, `move`, `contestmove`, `pokeedge`, `capability` and `spiritaction`, and anything
+   else is refused with a notification rather than misfiled. Every other drop passes through
+   untouched.
+
+   The stored shape gains a `type`, which is what lets component 8 tell a *cost* from a
+   *condition* — only a real `item` is ever consumed on evolution.
 
 ## Requirements
 
