@@ -353,6 +353,7 @@ function statValue(actor, stat, source = "total") {
  *   stat:atk>def             compare stats as played
  *   stat:levelup:atk>def     compare the points the player invested
  *   loyalty>=4               numeric compare on system.loyalty / friendship
+ *   party:shelmet            another Pokémon of that species in the trainer's party
  *
  * @returns {{ok: boolean, reason?: string}|null} null = not one of these
  */
@@ -506,6 +507,28 @@ function testPredicate(statements, actor, text) {
 
 /* ──────────────────────────── requirement evaluation ───────────────────────── */
 
+/**
+ * The trainer's party, resolved exactly as PTR's Party screen does
+ * (apps/party/sheet.js #loadFolders / #loadParty): a "Party" folder inside the
+ * trainer's folder wins; otherwise Pokémon whose flags.ptu.party names this
+ * trainer and are not boxed.
+ */
+function partyOf(trainer) {
+  const root = trainer?.folder;
+  const folder = root
+    ? root.children?.find((node) => node.folder?.name === "Party")?.folder ??
+      game.folders.find((f) => f.name === "Party" && f._source.folder === root.id)
+    : null;
+  if (folder) return folder.contents.filter((a) => a.type === "pokemon");
+
+  return game.actors.filter(
+    (a) =>
+      a.type === "pokemon" &&
+      a.flags?.ptu?.party?.trainer === trainer.id &&
+      !a.flags?.ptu?.party?.boxed
+  );
+}
+
 function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, owned }) {
   const text = String(raw ?? "").trim();
   if (!text) return { ok: true };
@@ -529,6 +552,18 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, o
     return owned.byType.get("item")?.has(wanted)
       ? { ok: true }
       : { ok: false, reason: `needs held ${prettify(explicitItem[1])}` };
+  }
+
+  // Another Pokémon of that species must be in the trainer's party.
+  const partyMember = /^party:(.+)$/i.exec(text);
+  if (partyMember) {
+    const wanted = norm(partyMember[1]);
+    const label = prettify(partyMember[1].trim());
+    if (!actor?.trainer) return { ok: false, reason: `needs ${label} in the party (no trainer set)` };
+    const found = partyOf(actor.trainer).some(
+      (mon) => mon.id !== actor.id && [mon.species?.slug, mon.species?.name].some((s) => norm(s) === wanted)
+    );
+    return found ? { ok: true } : { ok: false, reason: `needs ${label} in the party` };
   }
 
   // Computed conditions that roll options cannot express: move type, stat

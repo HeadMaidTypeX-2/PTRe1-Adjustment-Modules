@@ -92,6 +92,13 @@ Independent components, each under `scripts/`.
        pre-level-up figure. Operators `> < >= <= = !=`, and the right side may be another stat
        or a number (`stat:spatk>=20`).
      - `loyalty>=4`, `friendship>=N`, `level>=N` — numeric comparisons on the actor.
+     - `party:<species-slug>` — another Pokémon of that species is in the trainer's party,
+       e.g. `party:shelmet` on Karrablast → Escavalier. The party is resolved the same way as
+       PTR's Party screen: the trainer's **Party** folder if one exists, otherwise Pokémon
+       assigned to the trainer and not boxed. The evolving Pokémon never counts toward its
+       own requirement, so `party:eevee` on an Eevee needs a *second* Eevee. Blocked if the
+       Pokémon has no trainer. Party checks can't be combined inside a JSON predicate, but
+       separate entries still AND together.
      - **Anything containing a colon is a roll-option statement**, handed to PTR's own
        `PTUPredicate` and tested against `actor.getRollOptions()`. That covers everything the
        system already publishes about an actor — `self:types:fairy`, `self:ability:own-tempo`,
@@ -170,7 +177,7 @@ that use them keep working unchanged:
 | Item cell: held item | ✔ | ✔, plus the legacy `system.heldItem` text |
 | Item cell: ability, move, edge, condition… | Matches by type, but only a `type` recorded by component 7 makes it possible | ✔ |
 | Any other restriction text | **Always hidden**, even for compendium tags like `Thunderstone` | Evaluated (see above) |
-| Stats, loyalty, level, moves known, predicates | — | ✔ |
+| Stats, loyalty, level, moves known, party members, predicates | — | ✔ |
 | Edits to a species reach existing Pokémon | — | ✔ |
 | GM sees blocked options with the reason | — (hidden) | ✔ |
 | Consumes the item on evolving | — | ✔ |
