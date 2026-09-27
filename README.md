@@ -96,8 +96,8 @@ Independent components, each under `scripts/`.
        e.g. `party:shelmet` on Karrablast → Escavalier. The party is resolved the same way as
        PTR's Party screen: the trainer's **Party** folder if one exists, otherwise Pokémon
        assigned to the trainer and not boxed. The evolving Pokémon never counts toward its
-       own requirement, so `party:eevee` on an Eevee needs a *second* Eevee. Blocked if the
-       Pokémon has no trainer. Party checks can't be combined inside a JSON predicate, but
+       own requirement, so `party:eevee` on an Eevee needs a *second* Eevee. A Pokémon with no
+       trainer assigned falls back to its own **Party** folder; with neither, it is blocked. Party checks can't be combined inside a JSON predicate, but
        separate entries still AND together.
      - **Anything containing a colon is a roll-option statement**, handed to PTR's own
        `PTUPredicate` and tested against `actor.getRollOptions()`. That covers everything the

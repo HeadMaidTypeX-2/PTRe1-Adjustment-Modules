@@ -559,8 +559,15 @@ function checkRestriction(raw, actor, { speciesSlug, evolutionSlug, gmAllowed, o
   if (partyMember) {
     const wanted = norm(partyMember[1]);
     const label = prettify(partyMember[1].trim());
-    if (!actor?.trainer) return { ok: false, reason: `needs ${label} in the party (no trainer set)` };
-    const found = partyOf(actor.trainer).some(
+    // A Pokémon dragged into a Party folder by hand has no trainer flag; its own
+    // folder is then the party.
+    const party = actor?.trainer
+      ? partyOf(actor.trainer)
+      : actor?.folder?.name === "Party"
+        ? actor.folder.contents.filter((a) => a.type === "pokemon")
+        : null;
+    if (!party) return { ok: false, reason: `needs ${label} in the party (no trainer or Party folder)` };
+    const found = party.some(
       (mon) => mon.id !== actor.id && [mon.species?.slug, mon.species?.name].some((s) => norm(s) === wanted)
     );
     return found ? { ok: true } : { ok: false, reason: `needs ${label} in the party` };
