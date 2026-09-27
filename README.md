@@ -2,9 +2,11 @@
 
 A small bundle of fixes and infrastructure for a **PTU** (system id `ptu`) world on
 **Foundry V13/V14**, kept in one module so it installs and updates from one place.
-Targets the PTR **release** line (`righthandofvecna/fvtt-ptr`, e.g. `4.4.3.37`).
+Targets the PTR **release** line (`righthandofvecna/fvtt-ptr`), **`4.4.3.44` or later**.
+Version 0.8.0 is the first release built against 4.4.3.44. It will not work correctly on
+4.4.3.37; use 0.7.0 there.
 
-All components are additive and register at runtime — **no system files are edited.**
+All components are additive and register at runtime. **No system files are edited.**
 
 ## What's inside
 
@@ -18,14 +20,18 @@ Independent components, each under `scripts/`.
 2. **`aa-user-author-shim.js`** — restores `ChatMessage#user` as an alias of
    `ChatMessage#author`, which Foundry V14 removed. Without it, Automated Animations'
    PTU handler throws and animations never play. No-op on V13.
-3. **`shop-description-fix.js`** — mirrors PTU's `system.effect` into the conventional
-   `system.description.value` at derived-data time (in memory only — nothing is saved),
-   so description-extracting modules like Stylish Shop can read item text.
-   *(Requires libWrapper.)*
+3. **`ptu-adapter.js`** — registers a PTU adapter with Stylish Shop's
+   `registerSystemAdapter` API, so the shop reads descriptions from `system.effect` and prices
+   from `system.cost`. Currency is configured separately: in the GlitchSmith Library currency
+   dialog, point a sheet currency at `system.money`.
+4. **`gift-keyword-bridge.js`** — copies each item's PTU `system.keywords` into
+   Stylish Relationship Tracker's `giftTags` flag, lowercased, so item keywords work as gift
+   tags without hand-tagging. It only adds tags and never removes ones you added by hand. It
+   syncs on item create and update, and a one-time backfill runs for the GM on load.
 
 ### Rule elements & mechanics
 
-4. **ConsumeItem rule element** — `init.js`, `consume-item-form.js`, `consume-item.js`.
+5. **ConsumeItem rule element** — `init.js`, `consume-item-form.js`, `consume-item.js`.
    Adds a `ConsumeItem` rule element to PTR's item rule options. Registered at runtime.
    On a configurable item/trigger it finds a target item in the actor's inventory,
    decrements its `system.quantity`, and removes the item when the count hits 0. It is the
@@ -42,54 +48,17 @@ Independent components, each under `scripts/`.
    - **Remove at 0** — delete the item at 0 (default on).
    - Target priority: **UUID → Slug → self.**
 
-5. **`fix-grant-toggle.js`** — In ptu `4.4.3.37`, `PTUItem#toggleEnableState` references
-   `GrantItemRuleElement`, which is `undefined` in the shipped bundle (a dropped import), so
-   it throws a `ReferenceError` before reaching the actor update that re-evaluates grants.
-   This wrapper catches that specific error and performs the missed actor poke, so grant
-   re-evaluation runs on equip/enable toggles. *(Requires libWrapper.)*
-
-6. **`grant-equip-aware.js`** — Registers a custom `GrantItem` rule element (via
-   `CONFIG.PTU.rule.elements.custom`, which overrides the builtin) so a *reevaluating* grant
-   is not ignored merely because its item is disabled. By default, unequipping an item marks
-   its `GrantItem` rule `ignored`, which drops it from `actor.rules`; its retraction
-   (`preUpdateActor`) then never runs and the granted item is orphaned. This keeps the rule
-   alive so it deletes the grant on unequip and re-creates it on re-equip. Pairs with
-   `fix-grant-toggle.js` (which supplies the poke).
-
-   On such a grant, keep `reevaluateOnUpdate: true` and an `item:equipped` predicate.
-
-7. **`turn-state.js`** — Turn-timing infrastructure. Exposes triggers any item/effect rule
-   element can reference; **no content is baked in.**
-   - **`turn:active`** *(roll option)* — added to `getRollOptions()` whenever the actor is
-     the current combatant. Stateless, derived live, self-clearing. Use in any rule element's
-     `predicate`. *(Requires libWrapper.)*
-   - **`turn-start` / `turn-end`** *(selectors)* — dispatched on `ptu.startTurn` /
-     `ptu.endTurn` to the extraction-based elements `Reminder` and `ApplyEffect`. Use as
-     `selectors` on those rule elements. Emitted by the primary GM only.
-
-   **Example uses**
-   - During-your-turn bonus — `FlatModifier` with `"predicate": ["turn:active"]`.
-   - Start-of-turn prompt — `{ "key": "Reminder", "selectors": ["turn-start"], "message": "…" }`.
-   - Apply an effect each turn — `{ "key": "ApplyEffect", "selectors": ["turn-start"], "uuid": "…" }`.
-
-8. **Evolution requirements** — `evolution-requirements.js`. Gates the level-up evolution
+6. **Evolution requirements** — `evolution-requirements.js`. Gates the level-up evolution
    list on conditions the Pokémon actually meets, read from the species item itself.
 
-   PTR's species sheet already describes conditional evolutions and nothing enforces it:
-   each evolution row has an **Item** drop target, stored as
-   `evolution.other.evolutionItem = { slug, uuid }`, and a **Restriction** text column stored
-   as `evolution.other.restrictions`. The item field has never been read back — the system's
-   own converter writes it as `undefined`.
-
-   Meanwhile `PokemonGenerator.isEvolutionRestricted()` reacts to exactly `"male"` / `"female"`
-   and treats every other restriction as unrestricted, and the level-up form calls it with a
-   bare value where a `{ gender }` object is expected, against `this.pokemon.gender` — not a
-   property (`system.gender` is). So an Eevee at level 25 offered all 19 of its level-25
-   evolutions and preselected one **at random**.
+   Each evolution row on a species sheet has an **Item** cell (`evolution.other.evolutionItem`)
+   and a **Restriction** text column (`evolution.other.restrictions`). Since 4.4.3.44 the
+   system reads both, but only in a limited way (see *Relationship to the PTR system* below).
+   This component replaces the system's check with a fuller one during level-up.
 
    **How to use it:** open the species item and drop the requirement onto an evolution row's
    **Item** cell. The system's own drop handler only accepts documents of type `item`, so
-   `evolution-drop-targets.js` (component 9) widens it to abilities, moves, Poké Edges,
+   `evolution-drop-targets.js` (component 7) widens it to abilities, moves, Poké Edges,
    capabilities, contest moves, spirit actions **and conditions/effects** — everything a
    Pokémon can own. Drag Poisoned from the PTR Effects compendium onto a row and that
    evolution is only offered while the Pokémon is poisoned. Drop Own
@@ -168,22 +137,53 @@ Independent components, each under `scripts/`.
 
    Scope is the level-up screen only — random NPC generation still uses the system's own path.
 
-9. **`evolution-drop-targets.js`** — widens the species sheet's per-evolution **Item** drop
-   target. The system's `_onDrop` is a `switch (item.type)` in which only `case "item"` writes
-   `evolution.other.evolutionItem`, so dropping an ability on an evolution row instead fell
-   through to the ability branch and was quietly added to the species' ability list. This
-   wraps `PTUSpeciesSheet#_onDrop`: a drop landing on `.evolution-item` accepts `item`,
-   `ability`, `move`, `contestmove`, `pokeedge`, `capability`, `spiritaction`, `condition` and
-   `effect`, and anything else is refused with a notification rather than misfiled. Every other drop passes through
-   untouched.
+7. **`evolution-drop-targets.js`** — widens the species sheet's per-evolution **Item** drop
+   target. The system only records documents of type `item` there. Any other type falls
+   through to the sheet's normal handling, so an ability dropped on an evolution row is added
+   to the species' Basic Abilities instead. This wraps `PTUSpeciesSheet#_onDrop`. A drop landing
+   on `.evolution-item` accepts `item`, `ability`, `move`, `contestmove`, `pokeedge`,
+   `capability`, `spiritaction`, `condition` and `effect`. Any other type is refused with a
+   notification. All other drops pass through untouched.
 
-   The stored shape gains a `type`, which is what lets component 8 tell a *cost* from a
-   *condition* — only a real `item` is ever consumed on evolution.
+   The stored record adds `type` and `name`. The `type` is what lets component 6 tell a *cost*
+   from a *condition*, so only a real `item` is ever consumed on evolution. The system's own
+   check in 4.4.3.44 also reads `type`.
+
+## Relationship to the PTR system
+
+**Moved upstream in 4.4.3.44 and removed here.** These are now native. Existing rule elements
+that use them keep working unchanged:
+
+- the `turn:active` roll option, e.g. `FlatModifier` with `"predicate": ["turn:active"]`
+- the `turn-start` / `turn-end` selectors for `Reminder` and `ApplyEffect`, e.g.
+  `{ "key": "Reminder", "selectors": ["turn-start"], "message": "…" }`
+- the GrantItem enable-toggle fix (the old `fix-grant-toggle.js`)
+- equip-aware GrantItem retraction, where an unequipped item's grant is removed (the old
+  `grant-equip-aware.js`). For these grants, keep `reevaluateOnUpdate: true` and an
+  `item:equipped` predicate.
+
+**Evolution gating overlaps.** 4.4.3.44 added its own, narrower evolution check:
+
+| | System (4.4.3.44) | This module |
+|---|---|---|
+| Gender restriction | ✔ | ✔ |
+| Item cell: held item | ✔ | ✔, plus the legacy `system.heldItem` text |
+| Item cell: ability, move, edge, condition… | Matches by type, but only a `type` recorded by component 7 makes it possible | ✔ |
+| Any other restriction text | **Always hidden**, even for compendium tags like `Thunderstone` | Evaluated (see above) |
+| Stats, loyalty, level, moves known, predicates | — | ✔ |
+| Edits to a species reach existing Pokémon | — | ✔ |
+| GM sees blocked options with the reason | — (hidden) | ✔ |
+| Consumes the item on evolving | — | ✔ |
+| Multiple options default to "stay as you are" | ✔ | ✔ |
+
+Because the system's check removes rows before this module sees them, component 6 switches it
+off while the level-up list is built, then restores it. NPC generation still uses the system's
+check unchanged.
 
 ## Requirements
 
 - Foundry VTT V13 or V14
-- System: `ptu` (PTR release line, e.g. `4.4.3.37`)
+- System: `ptu` (PTR release line, `4.4.3.44` or later)
 - [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) (declared as a required dependency)
 
 ## Install

@@ -118,12 +118,18 @@ Hooks.once("setup", async () => {
   const original = PTUSpeciesSheet.prototype._onDrop;
   PTUSpeciesSheet.prototype._onDrop = async function (event, ...rest) {
     const index = evolutionRowIndex(event);
-    if (index !== null) {
+    if (index !== null && !event._ptuHandled) {
+      // The drop bubbles to the sheet-wide handler too, which the system's
+      // _onDrop skips when this flag is set (4.4.3.44). Set it before the first
+      // await — dispatch is synchronous — or that second pass files an ability
+      // under Basic Abilities or overwrites the {type, name} record.
+      event._ptuHandled = true;
       try {
         if (await handleEvolutionDrop(this, event, index)) return;
       } catch (error) {
         console.error(`${MODULE_ID} | evolution requirement drop failed`, error);
       }
+      delete event._ptuHandled;
     }
     return original.call(this, event, ...rest);
   };

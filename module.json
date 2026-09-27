@@ -1,8 +1,8 @@
 {
   "id": "PTRe1-Adjustment-Modules",
   "title": "PTRe1 Adjustment Modules",
-  "description": "A small collection of fixes for a PTU (system id 'ptu') world on Foundry V13/V14: (1) recolors the native token drag-ruler by the token's movement capability; (2) restores ChatMessage#user as an alias of #author so Automated Animations' PTU handler works on V14; (3) mirrors PTU's system.effect into system.description.value so description-extracting modules (e.g. Stylish Shop) can read item text.",
-  "version": "0.7.0",
+  "description": "Fixes and infrastructure for a PTR (system id 'ptu', 4.4.3.44+) world on Foundry V13/V14: capability-coloured drag ruler, ChatMessage#user shim for Automated Animations, a PTU adapter for Stylish Shop, a ConsumeItem rule element, item-keyword gift tags, and evolution requirements on the level-up screen.",
+  "version": "0.8.0",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
@@ -18,9 +18,6 @@
     "scripts/ptu-adapter.js",
     "scripts/init.js",
     "scripts/gift-keyword-bridge.js",
-    "scripts/fix-grant-toggle.js",
-    "scripts/grant-equip-aware.js",
-    "scripts/turn-state.js",
     "scripts/evolution-requirements.js",
     "scripts/evolution-drop-targets.js"
   ],
@@ -42,7 +39,10 @@
     "systems": [
       {
         "id": "ptu",
-        "type": "system"
+        "type": "system",
+        "compatibility": {
+          "minimum": "4.4.3.44"
+        }
       }
     ]
   },

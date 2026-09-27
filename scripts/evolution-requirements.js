@@ -53,6 +53,15 @@
  *
  * Scope is the level-up screen only — random NPC generation is left alone.
  * No system files are edited.
+ *
+ * ── 4.4.3.44 ────────────────────────────────────────────────────────────────
+ * Upstream now gates the same list itself, before this wrapper sees it:
+ * isEvolutionRestricted fails closed on any non-gender restriction text, and an
+ * inline check drops rows whose evolutionItem is not held. Both remove rows
+ * outright, so this module's restriction grammar could never pass and the GM
+ * view had nothing to disable. suspendUpstreamGates() turns both off for the
+ * synchronous row-building part of the first refresh; this module's evaluator
+ * (which covers gender, held items and the source-species fallback) decides.
  */
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -741,6 +750,28 @@ async function consumeEvolutionItem(data, result) {
 
 /* ──────────────────────────────── the patch ────────────────────────────────── */
 
+let PokemonGenerator = null;
+
+/**
+ * Disable the system's own evolution gates (4.4.3.44+) and return a restore fn.
+ * The row loop in LevelUpData#refresh runs before its first `await`, so callers
+ * restore immediately after invoking refresh — nothing else can observe the
+ * blanked evolutionItem fields.
+ */
+function suspendUpstreamGates(data) {
+  const rows = data.pokemon?.species?.system?.evolutions ?? [];
+  const items = rows.map((row) => row?.other?.evolutionItem);
+  rows.forEach((row) => { if (row?.other?.evolutionItem) row.other.evolutionItem = null; });
+
+  const original = PokemonGenerator?.isEvolutionRestricted;
+  if (original) PokemonGenerator.isEvolutionRestricted = () => false;
+
+  return () => {
+    rows.forEach((row, i) => { if (items[i]) row.other.evolutionItem = items[i]; });
+    if (original) PokemonGenerator.isEvolutionRestricted = original;
+  };
+}
+
 function patchLevelUpData(proto) {
   if (!proto || proto.ptreEvolutionRequirementsPatched) return false;
 
@@ -769,7 +800,14 @@ function patchLevelUpData(proto) {
 
   proto.refresh = async function (...args) {
     const firstBuild = !this.evolutions;
-    let result = await original.apply(this, args);
+    let pending;
+    const restore = firstBuild ? suspendUpstreamGates(this) : null;
+    try {
+      pending = original.apply(this, args);
+    } finally {
+      restore?.();
+    }
+    let result = await pending;
 
     if (firstBuild) {
       try {
@@ -806,6 +844,12 @@ Hooks.once("setup", async () => {
         `restrictions will not work.`,
       error
     );
+  }
+
+  try {
+    ({ PokemonGenerator } = await import("/systems/ptu/src/module/actor/pokemon/generator.js"));
+  } catch (error) {
+    console.warn(`${MODULE_ID} | PokemonGenerator unavailable; upstream gates stay active.`, error);
   }
 
   try {
