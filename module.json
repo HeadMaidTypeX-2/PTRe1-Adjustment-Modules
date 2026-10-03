@@ -1,7 +1,7 @@
 {
   "id": "PTRe1-Adjustment-Modules",
   "title": "PTRe1 Adjustment Modules",
-  "description": "Fixes and infrastructure for a PTR (system id 'ptu', 4.4.3.44+) world on Foundry V13/V14: capability-coloured drag ruler, ChatMessage#user shim for Automated Animations, a PTU adapter for Stylish Shop, a ConsumeItem rule element, item-keyword gift tags, and evolution requirements on the level-up screen.",
+  "description": "Fixes and infrastructure for a PTR (system id 'ptu', 4.4.3.46+) world on Foundry V13/V14: capability-coloured drag ruler, ChatMessage#user shim for Automated Animations, a PTU adapter for Stylish Shop, a ConsumeItem rule element, item-keyword gift tags, and add-ons for PTR's native evolution predicates.",
   "version": "0.8.0",
   "compatibility": {
     "minimum": "13",
@@ -18,8 +18,7 @@
     "scripts/ptu-adapter.js",
     "scripts/init.js",
     "scripts/gift-keyword-bridge.js",
-    "scripts/evolution-requirements.js",
-    "scripts/evolution-drop-targets.js"
+    "scripts/evolution-requirements.js"
   ],
   "languages": [
     {
@@ -41,7 +40,7 @@
         "id": "ptu",
         "type": "system",
         "compatibility": {
-          "minimum": "4.4.3.44"
+          "minimum": "4.4.3.46"
         }
       }
     ]
