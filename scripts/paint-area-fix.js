@@ -23,9 +23,9 @@
  * No-op unless DGA is active.
  */
 
+import { DGA, POKEMON_ASSETS, afterModuleInit } from "./dylan-modules.js";
+
 const MODULE_ID = "PTRe1-Adjustment-Modules";
-const DGA = "dylans-general-automations";
-const POKEMON_ASSETS = "pokemon-assets";
 
 function cellAt(point) {
   const { sizeX, sizeY } = canvas.grid;
@@ -93,18 +93,16 @@ function UserPaintArea() {
   });
 }
 
-function install() {
-  if (!game.modules.get(DGA)?.active) return;
-  for (const id of [DGA, POKEMON_ASSETS]) {
-    const scripts = game.modules.get(id)?.api?.scripts;
-    if (scripts && scripts.UserPaintArea !== UserPaintArea) scripts.UserPaintArea = UserPaintArea;
-  }
+function install(module) {
+  const scripts = module.api?.scripts;
+  if (!scripts || scripts.UserPaintArea === UserPaintArea) return;
+  scripts.UserPaintArea = UserPaintArea;
+  console.log(`${MODULE_ID} | Replaced ${module.id} UserPaintArea with the canvas-safe picker.`);
 }
 
-// setup: after DGA's init registration. ready: again, in case pokemon-assets copied
-// DGA's scripts into its own api after setup (registerAfterDependencies is async).
-Hooks.once("setup", install);
-Hooks.once("ready", () => {
-  install();
-  if (game.modules.get(DGA)?.active) console.log(`${MODULE_ID} | Replaced DGA UserPaintArea with the canvas-safe picker.`);
+// pokemon-assets copies DGA's scripts into its own api right before firing its
+// init hook, so patch each module's copy once that module has finished init.
+Hooks.once("init", () => {
+  afterModuleInit(DGA, install);
+  afterModuleInit(POKEMON_ASSETS, install);
 });

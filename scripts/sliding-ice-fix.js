@@ -26,8 +26,9 @@
  * No-op unless DGA is active.
  */
 
+import { DGA, afterModuleInit } from "./dylan-modules.js";
+
 const MODULE_ID = "PTRe1-Adjustment-Modules";
-const DGA = "dylans-general-automations";
 const ICE_TYPE = `${DGA}.slidingIce`;
 const ANIMATION_TIMEOUT_MS = 5000;
 const MAX_STEPS = 80;
@@ -117,8 +118,7 @@ async function onTokenSlide(event) {
   }
 }
 
-Hooks.once("setup", () => {
-  if (!game.modules.get(DGA)?.active) return;
+Hooks.once("init", () => afterModuleInit(DGA, () => {
   const cls = CONFIG.RegionBehavior?.dataModels?.[ICE_TYPE];
   if (!cls) {
     console.warn(`${MODULE_ID} | Sliding Ice fix: '${ICE_TYPE}' is not registered; DGA may have renamed it. Fix not applied.`);
@@ -127,4 +127,4 @@ Hooks.once("setup", () => {
   const { TOKEN_ENTER, TOKEN_MOVE_WITHIN } = CONST.REGION_EVENTS;
   cls.events = { [TOKEN_ENTER]: onTokenSlide, [TOKEN_MOVE_WITHIN]: onTokenSlide };
   console.log(`${MODULE_ID} | Sliding Ice handler replaced (always releases the token).`);
-});
+}));

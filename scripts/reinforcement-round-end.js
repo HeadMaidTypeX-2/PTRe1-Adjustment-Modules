@@ -23,8 +23,9 @@
  * Runs on the single active GM only. No-op unless DGA is active.
  */
 
+import { DGA } from "./dylan-modules.js";
+
 const MODULE_ID = "PTRe1-Adjustment-Modules";
-const DGA = "dylans-general-automations";
 const ROUND_FLAG = "reinforcementRound";
 
 // Set to false to let a platform spawn even when a token already stands on it.
