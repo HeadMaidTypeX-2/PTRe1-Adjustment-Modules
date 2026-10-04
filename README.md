@@ -29,6 +29,24 @@ Independent components, each under `scripts/`.
    tags without hand-tagging. It only adds tags and never removes ones you added by hand. It
    syncs on item create and update, and a one-time backfill runs for the GM on load.
 
+### Pokémon Assets / Dylan's General Automations fixes
+
+Each is a no-op unless Dylan's General Automations (DGA) is active.
+
+- **`paint-area-fix.js`** — replaces DGA's `UserPaintArea` cell picker, used by Pokémon
+  Assets' *Place Climbable Rocks* / *Place Waterfall* and DGA's Door destination. The original
+  is a MeasuredTemplate subclass that can stall the canvas render loop (token animations stop).
+  The replacement draws a plain square, never switches layers, and keeps the same contract:
+  left-click resolves the cell, right-click or Escape cancels.
+- **`sliding-ice-fix.js`** — replaces the Sliding Ice region behavior's handler with one that
+  always releases the token, even on error. The original could leave a token permanently
+  locked until reload.
+- **`reinforcement-round-end.js`** — implements the Reinforcements Platform's *Round End*
+  trigger, which DGA offers but never runs. At the end of each combat round (from a per-tile
+  starting round), every enabled Round End platform spawns one reinforcement and adds it to
+  the combat. Tile Config gains a *Reinforcements* section (trigger, enabled, starting round).
+  Compendium actors are imported once and reused; an occupied platform waits.
+
 ### Rule elements & mechanics
 
 5. **ConsumeItem rule element** — `init.js`, `consume-item-form.js`, `consume-item.js`.

@@ -1,8 +1,8 @@
 {
   "id": "PTRe1-Adjustment-Modules",
   "title": "PTRe1 Adjustment Modules",
-  "description": "Fixes and infrastructure for a PTR (system id 'ptu', 4.4.3.46+) world on Foundry V13/V14: capability-coloured drag ruler, ChatMessage#user shim for Automated Animations, a PTU adapter for Stylish Shop, a ConsumeItem rule element, item-keyword gift tags, and add-ons for PTR's native evolution predicates.",
-  "version": "0.8.0",
+  "description": "Fixes and infrastructure for a PTR (system id 'ptu', 4.4.3.46+) world on Foundry V13/V14: capability-coloured drag ruler, ChatMessage#user shim for Automated Animations, a PTU adapter for Stylish Shop, a ConsumeItem rule element, item-keyword gift tags, and add-ons for PTR's native evolution predicates, plus fixes for Pokémon Assets / Dylan's General Automations: a canvas-safe cell picker (Climbable Rocks, Waterfall, Door), a Sliding Ice handler that never strands tokens, and the missing Round End trigger for Reinforcements Platforms.",
+  "version": "0.9.0",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
@@ -18,7 +18,10 @@
     "scripts/ptu-adapter.js",
     "scripts/init.js",
     "scripts/gift-keyword-bridge.js",
-    "scripts/evolution-requirements.js"
+    "scripts/evolution-requirements.js",
+    "scripts/paint-area-fix.js",
+    "scripts/sliding-ice-fix.js",
+    "scripts/reinforcement-round-end.js"
   ],
   "languages": [
     {
