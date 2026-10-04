@@ -28,6 +28,12 @@ Independent components, each under `scripts/`.
    Stylish Relationship Tracker's `giftTags` flag, lowercased, so item keywords work as gift
    tags without hand-tagging. It only adds tags and never removes ones you added by hand. It
    syncs on item create and update, and a one-time backfill runs for the GM on load.
+5. **`trainer-prereq-or-fix.js`** — fixes "or" prerequisites in the Trainer Level-Up window.
+   PTR matched one pattern against the whole string, so only one alternative was ever
+   checked. `Adept Guile or Stealth` ignored Stealth, Tutelage-style `Level 10 or Two of …`
+   checked only the level, and Athlete ignored Novice Athletics. Each alternative is now
+   checked on its own, and two data typos (Seed Bag Rank 1, Mentoring) are repaired. The
+   window still shows PTR's original text. Remove once fixed upstream.
 
 ### Pokémon Assets / Dylan's General Automations fixes
 

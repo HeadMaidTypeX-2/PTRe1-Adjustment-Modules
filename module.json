@@ -21,7 +21,8 @@
     "scripts/evolution-requirements.js",
     "scripts/paint-area-fix.js",
     "scripts/sliding-ice-fix.js",
-    "scripts/reinforcement-round-end.js"
+    "scripts/reinforcement-round-end.js",
+    "scripts/trainer-prereq-or-fix.js"
   ],
   "languages": [
     {
