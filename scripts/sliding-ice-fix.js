@@ -14,6 +14,10 @@
  * `system.constructor.events[event.name]` at event time, so swapping the class's
  * static `events` record replaces the handler without touching DGA's files.
  *
+ * On V14 the original also crashed Dylan's Animated Tokens (`r is undefined` in
+ * _PRIVATE_createAnimationMovementPath) by moving the token mid-way through the
+ * triggering step. This version waits for that step, then moves with token.move().
+ *
  * Same behavior otherwise: slide cell by cell in the direction of the last step
  * until leaving the region (one cell past the edge) or hitting a wall, max 80.
  * The direction now comes from the last movement segment rather than the whole
@@ -73,7 +77,16 @@ async function slide(behavior, token, movement) {
   }
   if (end === start) return;
 
-  await token.update({ x: end.x - hx, y: end.y - hy });
+  // An explicit waypoint via the movement API, not a bare x/y update: on V14, Dylan's
+  // Animated Tokens builds its animation path from the passed waypoints and throws
+  // (`lastWaypoint` undefined) when none of them is a finished, non-intermediate one.
+  const dest = { x: end.x - hx, y: end.y - hy, elevation };
+  const action = last.action ?? token.movementAction;
+  if (typeof token.move === "function") {
+    await token.move([{ ...dest, ...(action ? { action } : {}) }], { constrainOptions: { ignoreCost: true } });
+  } else {
+    await token.update({ x: dest.x, y: dest.y });
+  }
   await settle(token.object?.allAnimationsPromise);
 }
 
@@ -86,7 +99,14 @@ async function onTokenSlide(event) {
   token._sliding = true;
   const unlock = typeof token.lockMovement === "function" ? token.lockMovement() : null;
   try {
-    token.stopMovement?.();
+    // Cancel only the rest of a multi-waypoint drag; a keyboard step has nothing pending,
+    // and stopping it is a suspect in the V14 DAT crash.
+    if (movement?.pending?.waypoints?.length) token.stopMovement?.();
+    // Let the step onto the ice finish first, as DGA's One-Way Jump does. This handler
+    // is called from inside core's processing of that step; moving again before it
+    // completes is what DAT choked on.
+    await settle(token.object?.allAnimationsPromise);
+    if (token.regions && !token.regions.has(this.region)) return;
     await slide(this, token, movement);
   } catch (err) {
     console.error(`${MODULE_ID} | Sliding Ice failed for ${token.name}; token released.`, err);
