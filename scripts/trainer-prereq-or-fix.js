@@ -40,8 +40,11 @@
  * loaded class feature, never hardcoded, and the term becomes
  * "2 of Acrobatics or Athletics or Stealth at Adept".
  *
- * Remove once upstream splits OR before pattern-matching in checkSinglePrereq
- * and the pack typos are fixed.
+ * Also fixes the class gate for multi-word Class Rework classes (Glamour
+ * Weaver -> Fey Law): see augmentContext().
+ *
+ * Remove once upstream splits OR before pattern-matching in checkSinglePrereq,
+ * matches classes by sluggified name, and the pack typos are fixed.
  */
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -67,6 +70,7 @@ let classSkillsSource = null;
 let simplifyString = (s) => s?.toLowerCase();
 let meetsPrereqsWithContext = null;
 let buildActorPrereqContext = null;
+let sluggify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 function skillLabels() {
   return CONFIG.PTU.data.skills.keys.map((k) => game.i18n.format(`SKILL.${k}`));
@@ -273,6 +277,37 @@ function resolveEntries(entries, ctx, originals) {
   });
 }
 
+/**
+ * The class gate (`meetsPrereqsWithContext`) tests the sluggified class name
+ * ("glamour-weaver") against owned item names, stored lowercase with spaces,
+ * and slugs ("glamour-weaver-cr" on the Class Rework item). Multi-word Class
+ * Rework classes therefore never match. Add each owned item's sluggified name
+ * and its `replacesSlug` to the slug set.
+ */
+function augmentContext(ctx, actor) {
+  for (const item of actor?.items?.contents ?? []) {
+    if (item?.name) ctx.itemSlugs.add(sluggify(item.name));
+    const replaces = item?.system?.replacesSlug;
+    if (replaces) ctx.itemSlugs.add(String(replaces).toLowerCase());
+  }
+  return ctx;
+}
+
+function wrapScoreContext(proto) {
+  const original = proto._getActorScoreContext;
+  if (typeof original !== "function") return false;
+  proto._getActorScoreContext = function (...args) {
+    const result = original.apply(this, args);
+    try {
+      if (result?.prereqCtx?.itemSlugs) augmentContext(result.prereqCtx, this.actor);
+    } catch (error) {
+      console.error(`${MODULE_ID} | class-gate context failed`, error);
+    }
+    return result;
+  };
+  return true;
+}
+
 function wrapGetter(proto, name) {
   const original = proto[name];
   if (typeof original !== "function") return false;
@@ -280,7 +315,7 @@ function wrapGetter(proto, name) {
     let ctx;
     try {
       loadClassSkills(this._compendiumFeatures);
-      ctx = buildActorPrereqContext(this.actor);
+      ctx = augmentContext(buildActorPrereqContext(this.actor), this.actor);
     } catch (error) {
       console.error(`${MODULE_ID} | OR-prerequisite context failed`, error);
       return original.apply(this, args);
@@ -309,12 +344,14 @@ Hooks.once("setup", async () => {
   try {
     ({ simplifyString, meetsPrereqsWithContext, buildActorPrereqContext } =
       await import("/systems/ptu/src/util/prereq-checker.js"));
+    ({ sluggify } = await import("/systems/ptu/src/util/misc.js"));
     const { TrainerLevelUpData } = await import("/systems/ptu/src/module/apps/trainer-level-up/document.js");
     const proto = TrainerLevelUpData?.prototype;
     if (!proto || proto.ptreOrPrereqPatched) return;
 
     const wrapped = ["getAvailableFeatures", "getAvailableEdges", "getBonusOptionItems"]
       .filter((name) => wrapGetter(proto, name));
+    if (wrapScoreContext(proto)) wrapped.push("_getActorScoreContext");
     proto.ptreOrPrereqPatched = true;
     console.log(`${MODULE_ID} | trainer OR-prerequisite fix installed (${wrapped.join(", ")}).`);
   } catch (error) {

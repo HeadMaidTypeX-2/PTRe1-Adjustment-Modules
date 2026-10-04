@@ -41,6 +41,10 @@ Independent components, each under `scripts/`.
      feature's own prerequisite (Acrobatics, Athletics, Stealth), read from the data rather
      than hardcoded
 
+   It also fixes the class gate for multi-word Class Rework classes. PTR compared
+   `glamour-weaver` with the item's `glamour-weaver-cr` slug, so a Class Rework Glamour
+   Weaver never qualified for Fey Law. This affected 37 classes and 221 features.
+
    The window still shows PTR's original text. Remove once fixed upstream.
 
 ### Pokémon Assets / Dylan's General Automations fixes
