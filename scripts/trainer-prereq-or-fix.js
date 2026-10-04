@@ -11,20 +11,37 @@
  *   "Level 10 or Two of … at Adept Rank"     -> level only (Tutelage & co.)
  *   "Novice Athletics or One of … Swimmer"   -> feature list only (Athlete)
  *
- * Two data typos break it further: "Adept General\nEducation or Adept Survival"
- * (Seed Bag Rank 1) and "Two of Charm Intimidate Intuition or …" (Mentoring,
- * Tutelage, Limit Breaking, Honed Potential).
+ * Data typos the checker cannot read at all (never met, even at Virtuoso):
+ *   "Adept General\nEducation or …"          Seed Bag Rank 1
+ *   "Two of Charm Intimidate Intuition or …" Mentoring, Tutelage & co.
+ *   "Novice Survial"                         Hunter (Class Rework)
+ *   "Expert Athletics And Focus"             Enduring Soul, Vim and Vigour,
+ *                                            Stat Stratagem, Mystic
+ *   "Novice Acrobatics; Athletics or Charm"  Dancer, Choreographer, Power Pirouette
+ *   "Adept Technology Ed"                    The Devil's Playthings
+ *   ["Adept Intuition and …", "or Mystic Senses"]   Mystic (OR across entries)
  *
  * `checkSinglePrereq` is module-private, so it cannot be replaced. Instead this
- * wraps the three list getters. For each prerequisite containing a top-level
- * OR it normalises the text, splits it into options (keeping "N of … at Rank"
- * and "N of A or B" lists whole), carries a leading rank to bare skill terms,
- * and tests each option with the system's own `meetsPrereqsWithContext`. For
- * the duration of the call the entry's label is swapped for a pass/fail
- * stand-in; returned entries get their original prerequisites back, so the
- * window shows PTR's text. Compendium browser data is never mutated.
+ * wraps the three list getters. An entry starting with "or" is joined to the
+ * one before it. Each prerequisite is normalised, split into AND groups on
+ * ";", each group into OR options (keeping "N of … at Rank" and "N of A or B"
+ * lists whole), and each option into AND terms on "and" when every part is a
+ * skill. A leading
+ * rank carries to bare skill terms, a skill name one letter off after a rank
+ * is corrected, and every term is tested with the system's own
+ * `meetsPrereqsWithContext`. For the duration of the call the entry's label is
+ * swapped for a pass/fail stand-in; returned entries get their original
+ * prerequisites back, so the window shows PTR's text. Compendium browser data
+ * is never mutated.
  *
- * Remove once upstream splits OR before pattern-matching in checkSinglePrereq.
+ * "Adept in 2 Rogue Skills" (Street Brawler, Class Rework) refers to a class's
+ * skills: the ones in that class feature's own prerequisite (Rogue: "Two of
+ * Acrobatics or Athletics or Stealth at Novice"). The list is read from the
+ * loaded class feature, never hardcoded, and the term becomes
+ * "2 of Acrobatics or Athletics or Stealth at Adept".
+ *
+ * Remove once upstream splits OR before pattern-matching in checkSinglePrereq
+ * and the pack typos are fixed.
  */
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -39,16 +56,43 @@ const SKILL_LIST_RE = new RegExp(`\\b((?:${N_WORD}) of )(.+?)( at (?:${RANKS})\\
 const PASS = "";
 const FAIL = "ptre-unmet";
 
+const RANKED_RE = new RegExp(`^((?:[A-Z]:\\s*)?(?:${RANKS}) )(.+)$`, "i");
+/** "Adept in 2 Rogue Skills" — the class feature's own prerequisite skills. */
+const CLASS_SKILLS_RE = new RegExp(`^(${RANKS}) in (${N_WORD}) (.+?) Skills$`, "i");
+
+/** simplified class name -> skill names from its "N of A or B at Rank" prerequisite. */
+let classSkills = new Map();
+let classSkillsSource = null;
+
 let simplifyString = (s) => s?.toLowerCase();
 let meetsPrereqsWithContext = null;
 let buildActorPrereqContext = null;
 
+function skillLabels() {
+  return CONFIG.PTU.data.skills.keys.map((k) => game.i18n.format(`SKILL.${k}`));
+}
+
 /** Same resolution as prereq-checker.js getSkillKey. */
 function isSkillName(name) {
   const target = simplifyString(name.replace(/\.$/, "").trim());
-  return !!target && CONFIG.PTU.data.skills.keys.some(
-    (k) => target === simplifyString(game.i18n.format(`SKILL.${k}`))
-  );
+  return !!target && skillLabels().some((label) => target === simplifyString(label));
+}
+
+/** True when a and b differ by exactly one insertion, deletion or substitution. */
+function oneEditApart(a, b) {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+
+/** "Survial" -> "Survival" when exactly one skill name is one edit away. */
+function correctSkill(name) {
+  const target = simplifyString(name.replace(/\.$/, "").trim());
+  if (!target || target.length < 4) return null;
+  const hits = skillLabels().filter((label) => oneEditApart(target, simplifyString(label)));
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /**
@@ -69,9 +113,9 @@ function splitSkillRun(list) {
   return skills.length ? skills.join(" or ") : null;
 }
 
-/** Collapse whitespace, drop "or higher", repair unseparated skill lists. */
+/** Collapse whitespace, drop "or higher", expand "Ed", repair unseparated skill lists. */
 function normalise(text) {
-  let out = text.replace(/\s+/g, " ").replace(/ or higher\b/gi, "").trim();
+  let out = text.replace(/\s+/g, " ").replace(/ or higher\b/gi, "").replace(/\bEd\b\.?/g, "Education").trim();
   out = out.replace(SKILL_LIST_RE, (whole, head, list, tail) => {
     const fixed = splitSkillRun(list);
     return fixed ? `${head}${fixed}${tail}` : whole;
@@ -96,52 +140,133 @@ function splitOptions(text) {
     }
     options.push(term.trim());
   }
-  // Carry a leading rank to bare skill terms: "Adept Guile or Stealth".
-  let rank = null;
-  return options.map((opt) => {
-    const own = opt.match(RANK_RE);
-    if (own) {
-      rank = own[1];
-      return opt;
-    }
-    return rank && isSkillName(opt) ? `${rank} ${opt}` : opt;
-  });
+  return options;
 }
 
-/** label -> option list, or null when the system's own check is fine. */
+/**
+ * "Expert Athletics And Focus" -> AND terms.
+ * Only when the first part is ranked and every part is a skill, so feature
+ * names containing "and" ("Vim and Vigour") are never split.
+ */
+function splitAnd(option) {
+  if (N_OF_START_RE.test(option)) return [option];
+  const parts = option.split(/ and /i).map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return [option];
+  const allSkills = parts.every((part, i) => {
+    const ranked = part.match(RANKED_RE);
+    if (!ranked) return i > 0 && isSkillName(part);
+    return isSkillName(ranked[2]) || !!correctSkill(ranked[2]);
+  });
+  return allSkills ? parts : [option];
+}
+
+/**
+ * In reading order: carry a leading rank to bare skill terms ("Adept Guile or
+ * Stealth") and correct a misspelled skill directly after a rank ("Novice Survial").
+ */
+function finishTerms(groups) {
+  let rank = null;
+  return groups.map((options) => options.map((terms) => terms.map((term) => {
+    const own = term.match(RANK_RE);
+    if (own) {
+      rank = own[1];
+      const ranked = term.match(RANKED_RE);
+      if (ranked && !isSkillName(ranked[2])) {
+        const fixed = correctSkill(ranked[2]);
+        if (fixed) return `${ranked[1]}${fixed}`;
+      }
+      return term;
+    }
+    return rank && isSkillName(term) ? `${rank} ${term}` : term;
+  })));
+}
+
+function classKey(name) {
+  return simplifyString(String(name ?? "").trim())?.replace(/\s+/g, "-");
+}
+
+/**
+ * Class name -> skills, read from each "Class" feature's own
+ * "N of A or B at Rank" prerequisite. Rebuilt when the feature list changes.
+ */
+function loadClassSkills(features) {
+  if (!Array.isArray(features) || features === classSkillsSource) return;
+  classSkillsSource = features;
+  classSkills = new Map();
+  parsed.clear();
+  for (const entry of features) {
+    if (!entry?.keywords?.includes("Class")) continue;
+    for (const p of entry.prerequisites ?? []) {
+      const list = normalise(p?.label ?? "").match(SKILL_LIST_RE)?.[2];
+      const skills = list?.split(/ or /i).map((s) => s.trim()).filter(Boolean);
+      if (skills?.length && skills.every(isSkillName)) {
+        classSkills.set(classKey(entry.classPretty || entry.name), skills);
+      }
+    }
+  }
+}
+
+/** "Adept in 2 Rogue Skills" -> "2 of Acrobatics or Athletics or Stealth at Adept". */
+function expandClassSkills(part) {
+  const match = part.match(CLASS_SKILLS_RE);
+  const skills = match && classSkills.get(classKey(match[3]));
+  return skills ? `${match[2]} of ${skills.join(" or ")} at ${match[1]}` : part;
+}
+
+/**
+ * label -> AND groups (";") of OR options of AND terms ("and"), or null when
+ * the system's own check of the label is already right.
+ */
 const parsed = new Map();
 function optionsFor(label) {
   if (typeof label !== "string") return null;
   if (parsed.has(label)) return parsed.get(label);
-  let result = null;
   const text = normalise(label);
-  if (/ or /i.test(text)) {
-    const options = splitOptions(text);
-    if (options.length > 1 || text !== label) result = options;
-  } else if (text !== label) {
-    result = [text];
-  }
+  const groups = finishTerms(
+    text.split(/;\s*/).filter(Boolean).map(expandClassSkills).map((part) =>
+      (/ or /i.test(part) ? splitOptions(part) : [part]).map(splitAnd))
+  );
+  const unchanged = groups.length === 1 && groups[0].length === 1
+    && groups[0][0].length === 1 && groups[0][0][0] === label;
+  const result = unchanged ? null : groups;
   parsed.set(label, result);
   return result;
 }
 
-function optionMet(option, ctx) {
-  return meetsPrereqsWithContext({ prerequisites: [{ label: option }] }, ctx);
+function termMet(term, ctx) {
+  return meetsPrereqsWithContext({ prerequisites: [{ label: term }] }, ctx);
 }
 
-/** Copy of `entries` with every OR prerequisite pre-resolved for this actor. */
+function labelMet(groups, ctx) {
+  return groups.every((options) => options.some((terms) => terms.every((t) => termMet(t, ctx))));
+}
+
+/** Copy of `entries` with every repaired prerequisite pre-resolved for this actor. */
 function resolveEntries(entries, ctx, originals) {
   if (!Array.isArray(entries)) return entries;
   return entries.map((entry) => {
     const prereqs = entry?.prerequisites;
     if (!Array.isArray(prereqs) || !prereqs.length) return entry;
     let changed = false;
-    const next = prereqs.map((p) => {
-      const options = optionsFor(p?.label);
-      if (!options) return p;
+    const next = [];
+    for (let i = 0; i < prereqs.length; i++) {
+      // ["Adept Intuition and …", "or Mystic Senses"]: a leading "or" joins the entry before it.
+      let label = prereqs[i]?.label;
+      let j = i;
+      while (typeof label === "string" && /^\s*or\s/i.test(prereqs[j + 1]?.label ?? "")) {
+        j++;
+        label = `${label} ${prereqs[j].label.trim()}`;
+      }
+      const groups = optionsFor(label);
+      if (!groups) {
+        next.push(prereqs[i]);
+        continue;
+      }
       changed = true;
-      return { ...p, label: options.some((o) => optionMet(o, ctx)) ? PASS : FAIL };
-    });
+      next.push({ ...prereqs[i], label: labelMet(groups, ctx) ? PASS : FAIL });
+      for (let k = i + 1; k <= j; k++) next.push({ ...prereqs[k], label: PASS });
+      i = j;
+    }
     if (!changed) return entry;
     if (entry.uuid) originals.set(entry.uuid, prereqs);
     return { ...entry, prerequisites: next };
@@ -154,6 +279,7 @@ function wrapGetter(proto, name) {
   proto[name] = function (...args) {
     let ctx;
     try {
+      loadClassSkills(this._compendiumFeatures);
       ctx = buildActorPrereqContext(this.actor);
     } catch (error) {
       console.error(`${MODULE_ID} | OR-prerequisite context failed`, error);
@@ -196,4 +322,4 @@ Hooks.once("setup", async () => {
   }
 });
 
-export { normalise, splitOptions, optionsFor };
+export { normalise, optionsFor };

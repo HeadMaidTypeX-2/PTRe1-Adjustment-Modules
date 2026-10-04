@@ -32,8 +32,16 @@ Independent components, each under `scripts/`.
    PTR matched one pattern against the whole string, so only one alternative was ever
    checked. `Adept Guile or Stealth` ignored Stealth, Tutelage-style `Level 10 or Two of …`
    checked only the level, and Athlete ignored Novice Athletics. Each alternative is now
-   checked on its own, and two data typos (Seed Bag Rank 1, Mentoring) are repaired. The
-   window still shows PTR's original text. Remove once fixed upstream.
+   checked on its own. Malformed skill prerequisites in PTR's data are also read correctly:
+   - typos and abbreviations (Hunter's `Survial`, `Technology Ed`)
+   - "and" and ";" (Enduring Soul, Stat Stratagem, Dancer, Choreographer)
+   - missing separators (Mentoring, Seed Bag Rank 1, Rogue)
+   - an "or" split across entries (Mystic)
+   - class skills: Street Brawler's "Adept in 2 Rogue Skills" uses the skills in the Rogue
+     feature's own prerequisite (Acrobatics, Athletics, Stealth), read from the data rather
+     than hardcoded
+
+   The window still shows PTR's original text. Remove once fixed upstream.
 
 ### Pokémon Assets / Dylan's General Automations fixes
 
