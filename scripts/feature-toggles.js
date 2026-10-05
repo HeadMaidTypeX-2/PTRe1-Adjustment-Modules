@@ -31,7 +31,7 @@ export const FEATURES = [
   {
     id: "evolutionAddons", group: "PTR system", live: false,
     title: "Evolution add-ons",
-    description: "Extends PTR's native evolution predicates on level-up: extra roll options (stats and stat comparisons, loyalty, friendship, move types, party species from the trainer's Party folder, held items, user:gm), the source species' predicate as a fallback, a GM view of blocked evolutions with the reason, and consuming evolution items on confirm. Also prints a GM report of legacy evolution data on load.",
+    description: "Extends PTR's native evolution predicates on level-up: extra roll options (stats and stat comparisons, loyalty, friendship, move types, party species from the trainer's Party folder, held items, user:gm), the source species' predicate as a fallback, a GM view of blocked evolutions with the reason, and consuming evolution items on confirm. A report of legacy evolution data PTR's migration dropped is available on demand: game.modules.get('PTRe1-Adjustment-Modules').api.legacyEvolutionReport() in the console.",
   },
   {
     id: "trainerPrereqOr", group: "PTR system", live: false,

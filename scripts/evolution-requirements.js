@@ -418,8 +418,15 @@ function translateRestriction(text, itemSlug) {
   return `item:${itemSlug(t)}`;
 }
 
-Hooks.once("ready", async () => {
-  if (game.system.id !== "ptu" || game.users.activeGM?.id !== game.user.id || !featureEnabled("evolutionAddons")) return;
+/**
+ * Legacy evolution report — on demand only (it used to run on every load with a
+ * permanent warning). From the console:
+ *   game.modules.get("PTRe1-Adjustment-Modules").api.legacyEvolutionReport()
+ * Lists legacy restrictions / Item-cell entries PTR's migration 121 dropped, with
+ * the predicate to add. Returns the rows.
+ */
+async function legacyEvolutionReport() {
+  if (game.system.id !== "ptu") return [];
 
   const species = [
     ...game.items.filter((i) => i.type === "species"),
@@ -431,7 +438,10 @@ Hooks.once("ready", async () => {
   const legacy = ({ row }) =>
     (row.other?.restrictions ?? []).some((t) => translateRestriction(t, slugify)) ||
     (row.other?.evolutionItem?.type && row.other.evolutionItem.type !== "item");
-  if (!rows.some(legacy)) return;
+  if (!rows.some(legacy)) {
+    ui.notifications.info("PTRe1: no legacy evolution restrictions found.");
+    return [];
+  }
 
   // Resolve bare names ("Thunderstone") to real item slugs ("thunder-stone").
   const slugs = new Map();
@@ -472,15 +482,22 @@ Hooks.once("ready", async () => {
       }
     }
   }
-  if (!lost.length) return;
+  if (!lost.length) {
+    ui.notifications.info("PTRe1: no legacy evolution restrictions found.");
+    return [];
+  }
 
   console.warn(
     `${MODULE_ID} | ${lost.length} evolution restriction(s) were dropped by PTR's predicate migration. ` +
       `Add the suggested predicate on each species sheet; saving the sheet erases the old text.`
   );
   console.table(lost);
-  ui.notifications.warn(
-    `PTRe1: ${lost.length} legacy evolution restriction(s) need re-entering as predicates — see console (F12).`,
-    { permanent: true }
-  );
+  ui.notifications.info(`PTRe1: ${lost.length} legacy evolution restriction(s) listed in the console (F12).`);
+  return lost;
+}
+
+Hooks.once("init", () => {
+  const module = game.modules.get(MODULE_ID);
+  module.api ??= {};
+  module.api.legacyEvolutionReport = legacyEvolutionReport;
 });
