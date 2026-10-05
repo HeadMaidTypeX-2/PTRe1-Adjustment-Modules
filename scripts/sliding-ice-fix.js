@@ -114,9 +114,17 @@ async function slide(behavior, token, movement) {
   // snapped to the grid. NOT from `last`: core splits movement at region boundaries,
   // so the event's last passed waypoint is where the token's centre crossed the
   // edge — half a cell off-grid — and every slide position inherited that offset.
-  const base = { x: snapAxis(token.x, dx, sizeX), y: snapAxis(token.y, dy, sizeY) };
-  const start = { x: base.x + hx, y: base.y + hy, elevation };
+  // If the token is between cells, it only gets the forward cell when nothing blocks
+  // it. A step into a boulder/solid tile is cut short at the tile's edge, leaving the
+  // token half inside it; snapping that forward put it in the boulder, the move was
+  // refused, and the token froze straddling the edge. Snap it back instead.
   const tokenObj = token.object;
+  const forward = { x: snapAxis(token.x, dx, sizeX), y: snapAxis(token.y, dy, sizeY) };
+  const back = { x: snapAxis(token.x, -dx, sizeX), y: snapAxis(token.y, -dy, sizeY) };
+  const centreOf = (p) => ({ x: p.x + hx, y: p.y + hy, elevation });
+  const between = forward.x !== back.x || forward.y !== back.y;
+  const base = between && collides(tokenObj, centreOf(back), centreOf(forward)) ? back : forward;
+  const start = centreOf(base);
 
   let end = start;
   for (let n = 1; n < MAX_STEPS; n++) {
@@ -131,9 +139,12 @@ async function slide(behavior, token, movement) {
   // An explicit waypoint via the movement API, not a bare x/y update: on V14, Dylan's
   // Animated Tokens builds its animation path from the passed waypoints and throws
   // (`lastWaypoint` undefined) when none of them is a finished, non-intermediate one.
+  // ignoreWalls: the path was already collision-checked above, and core must not cut
+  // the move short again. A token whose centre sits exactly on a tile edge collides in
+  // every direction, so the corrective snap back would be refused.
   const action = last.action ?? token.movementAction;
   if (typeof token.move === "function") {
-    await token.move([{ ...dest, ...(action ? { action } : {}) }], { constrainOptions: { ignoreCost: true } });
+    await token.move([{ ...dest, ...(action ? { action } : {}) }], { constrainOptions: { ignoreCost: true, ignoreWalls: true } });
   } else {
     await token.update({ x: dest.x, y: dest.y });
   }
