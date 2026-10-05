@@ -59,6 +59,15 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
 - **`sliding-ice-fix.js`** — replaces the Sliding Ice region behavior's handler with one that
   always releases the token, even on error. The original could leave a token permanently
   locked until reload.
+- **`field-move-regions.js`** — removes Pokémon Assets' *Place Climbable Rocks* / *Place
+  Waterfall* region tools. Adds **Rock Climb** and **Waterfall** Region Behaviors that work
+  like Surf: draw a region over the rock face or waterfall and add the behavior. Tokens can't
+  walk in. Facing it and pressing Interact crosses the region in a straight line, either way,
+  if the party knows the move (Pokémon Assets' own check, setting and prompt). The old tools
+  made locked regions; a GM console report lists them on load, and
+  `game.modules.get("PTRe1-Adjustment-Modules").api.removeLegacyClimbRegions()` deletes them.
+  Needs Pokémon Assets and DGA. The world must be relaunched once so Foundry picks up the new
+  behavior types.
 - **`reinforcement-round-end.js`** — implements the Reinforcements Platform's *Round End*
   trigger, which DGA offers but never runs. At the end of each combat round (from a per-tile
   starting round), every enabled Round End platform spawns one reinforcement and adds it to
