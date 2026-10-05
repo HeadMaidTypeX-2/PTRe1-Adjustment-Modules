@@ -22,6 +22,9 @@
  * until the token's WHOLE footprint is off the region or it hits a wall, max 80.
  * (DGA tested only the centre point, so a token stopped half on the ice whenever
  * the region's edges weren't exactly on grid lines.)
+ * The slide starts from the token's real position, snapped to the grid — not
+ * from the event's last waypoint, which is the off-grid point where the token's
+ * centre crossed the region edge.
  * The direction now comes from the last movement segment rather than the whole
  * drag's origin, so a multi-waypoint drag slides the way it entered the ice.
  *
@@ -78,6 +81,19 @@ function overlapsRegion(region, center, hx, hy, elevation) {
   return false;
 }
 
+/**
+ * Snap one axis to the grid. Off-grid values (a token stopped where its centre
+ * crossed the region edge — exactly half a cell) snap FORWARD in the direction of
+ * travel, i.e. onto the cell it was stepping into.
+ */
+function snapAxis(value, dir, size) {
+  const q = value / size;
+  const eps = 1e-6;
+  if (dir > 0) return Math.ceil(q - eps) * size;
+  if (dir < 0) return Math.floor(q + eps) * size;
+  return Math.round(q) * size;
+}
+
 async function slide(behavior, token, movement) {
   const { region, scene } = behavior;
   const { sizeX, sizeY } = scene.grid;
@@ -94,7 +110,12 @@ async function slide(behavior, token, movement) {
   const hx = ((token.width ?? 1) * sizeX) / 2;
   const hy = ((token.height ?? 1) * sizeY) / 2;
   const elevation = last.elevation ?? token.elevation ?? 0;
-  const start = { x: last.x + hx, y: last.y + hy, elevation };
+  // Start from where the token actually is now (its step onto the ice has finished),
+  // snapped to the grid. NOT from `last`: core splits movement at region boundaries,
+  // so the event's last passed waypoint is where the token's centre crossed the
+  // edge — half a cell off-grid — and every slide position inherited that offset.
+  const base = { x: snapAxis(token.x, dx, sizeX), y: snapAxis(token.y, dy, sizeY) };
+  const start = { x: base.x + hx, y: base.y + hy, elevation };
   const tokenObj = token.object;
 
   let end = start;
@@ -104,12 +125,12 @@ async function slide(behavior, token, movement) {
     if (collides(tokenObj, start, next)) break;
     end = next;
   }
-  if (end === start) return;
+  const dest = { x: end.x - hx, y: end.y - hy, elevation };
+  if (dest.x === token.x && dest.y === token.y) return;
 
   // An explicit waypoint via the movement API, not a bare x/y update: on V14, Dylan's
   // Animated Tokens builds its animation path from the passed waypoints and throws
   // (`lastWaypoint` undefined) when none of them is a finished, non-intermediate one.
-  const dest = { x: end.x - hx, y: end.y - hy, elevation };
   const action = last.action ?? token.movementAction;
   if (typeof token.move === "function") {
     await token.move([{ ...dest, ...(action ? { action } : {}) }], { constrainOptions: { ignoreCost: true } });

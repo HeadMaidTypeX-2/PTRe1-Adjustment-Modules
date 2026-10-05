@@ -58,7 +58,21 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   left-click resolves the cell, right-click or Escape cancels.
 - **`sliding-ice-fix.js`** — replaces the Sliding Ice region behavior's handler with one that
   always releases the token, even on error. The original could leave a token permanently
-  locked until reload.
+  locked until reload. Slides start from the token's grid-snapped position and stop only
+  once the token is completely off the ice, on the cell bordering it. On square grids,
+  movement on ice is cardinal only: diagonal steps that start or end on ice are blocked.
+
+  *Known limitations for tokens larger than 1×1* (not fixed; large tokens rarely cross ice):
+  - **Late trigger.** Foundry counts a token as inside a region by its centre point, so a
+    2×2 token's first step onto the ice (half its body on it) doesn't slide; the slide starts
+    on the next step.
+  - **Walls checked along the centre line only.** A wall blocking just one of the token's rows
+    or columns can be missed, letting it slide partly through the wall. DGA's original has
+    the same weakness.
+  - **The diagonal block tests one cell, not the whole footprint.** Some diagonal moves where
+    only part of the token touches ice get through.
+
+  The stop position and grid alignment work correctly at any size.
 - **`field-move-regions.js`** — removes Pokémon Assets' *Place Climbable Rocks* / *Place
   Waterfall* region tools. Adds **Rock Climb** and **Waterfall** Region Behaviors that work
   like Surf: draw a region over the rock face or waterfall and add the behavior. Tokens can't
