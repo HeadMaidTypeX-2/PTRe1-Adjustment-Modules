@@ -64,6 +64,10 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   starting round), every enabled Round End platform spawns one reinforcement and adds it to
   the combat. Tile Config gains a *Reinforcements* section (trigger, enabled, starting round).
   Compendium actors are imported once and reused; an occupied platform waits.
+  A per-tile **Spawn unlinked tokens** toggle (default on, also shown in the placement dialog)
+  gives each spawn its own copy of the actor. PTR forces actors to be linked, so without it
+  every spawn shares one sheet. It also applies to the *Via Script* trigger, but not to DGA's
+  *Scene Creation* trigger.
 
 ### Rule elements & mechanics
 
