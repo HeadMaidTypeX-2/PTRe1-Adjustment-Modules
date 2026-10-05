@@ -24,7 +24,8 @@
     "scripts/sliding-ice-fix.js",
     "scripts/reinforcement-round-end.js",
     "scripts/trainer-prereq-or-fix.js",
-    "scripts/field-move-regions.js"
+    "scripts/field-move-regions.js",
+    "scripts/synthetics-reset-fix.js"
   ],
   "languages": [
     {

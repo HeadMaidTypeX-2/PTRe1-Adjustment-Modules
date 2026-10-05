@@ -39,6 +39,12 @@ export const FEATURES = [
     description: "Fixes the Trainer Level-Up wizard so prerequisites with alternatives (\"Adept Guile or Stealth\", \"Level 10 or Two of …\") test every option, and reads several known PTR data typos. The window still shows PTR's original prerequisite text.",
   },
 
+  {
+    id: "syntheticsResetFix", group: "PTR system", live: false,
+    title: "Rule elements broken by 4.4.3.46 (TypeOverwrite & co.)",
+    description: "PTR 4.4.3.46 resets rule-element results between the two halves of actor preparation, which wipes anything written after the first half. This keeps those results so these rule elements work again: TypeOverwrite (type changes), AP drain / bind, EphemeralEffect, and TokenImage / TokenLight / TokenName. Redundant but harmless once PTR fixes it upstream.",
+  },
+
   // --- Integrations ---------------------------------------------------------
   {
     id: "aaUserShim", group: "Module integrations", live: false,

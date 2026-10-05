@@ -17,7 +17,7 @@ Everything is on by default.
 - **Live** features take effect immediately.
 - **Reload** features patch the system or Foundry once at startup. Changing one asks to reload
   the world. These are ConsumeItem, the evolution add-ons, the trainer OR-prerequisite fix, the
-  Automated Animations shim and the Stylish Shop adapter.
+  rule-element synthetics fix, the Automated Animations shim and the Stylish Shop adapter.
 - A feature whose required module isn't active is marked *Inactive* and does nothing either way.
 
 Switching off one of the DGA replacements (the cell picker, Sliding Ice, or Reinforcements' Via
@@ -32,6 +32,17 @@ The switches are stored as hidden world settings, `PTRe1-Adjustment-Modules.feat
 Independent components, each under `scripts/`.
 
 ### Foundry / integration fixes
+
+- **`synthetics-reset-fix.js`** — repairs rule elements broken by PTR 4.4.3.46 (still broken
+  in 4.4.3.47). That release resets rule-element results inside `prepareSynthetics`, which runs
+  at the start of both halves of actor preparation. The second reset wipes everything written
+  in `afterPrepareData` at the default priority. This carries those results across the second
+  reset, so the following work again:
+  - **TypeOverwrite**: type changes reach the Pokémon's typing and `actor.types`;
+  - **AP** drain / bind;
+  - **EphemeralEffect**;
+  - **TokenImage / TokenLight / TokenName**.
+  It is redundant but harmless once PTR fixes this upstream. *(Requires libWrapper.)*
 
 1. **`ptr-capability-ruler.js`** — recolours the native token drag-ruler
    (green / yellow / red) based on the dragged token's movement capability for the
