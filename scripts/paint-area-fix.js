@@ -23,6 +23,8 @@
  * No-op unless DGA is active.
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 import { DGA, POKEMON_ASSETS, afterModuleInit } from "./dylan-modules.js";
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -93,10 +95,18 @@ function UserPaintArea() {
   });
 }
 
+// Wraps rather than replaces, so switching the feature off live hands back to the
+// module's own picker.
 function install(module) {
   const scripts = module.api?.scripts;
-  if (!scripts || scripts.UserPaintArea === UserPaintArea) return;
-  scripts.UserPaintArea = UserPaintArea;
+  if (!scripts || scripts.UserPaintArea?.ptre1Wrapped) return;
+  const original = scripts.UserPaintArea;
+  const wrapped = function (...args) {
+    if (featureEnabled("paintAreaFix") || typeof original !== "function") return UserPaintArea(...args);
+    return original.apply(this, args);
+  };
+  wrapped.ptre1Wrapped = true;
+  scripts.UserPaintArea = wrapped;
   console.log(`${MODULE_ID} | Replaced ${module.id} UserPaintArea with the canvas-safe picker.`);
 }
 

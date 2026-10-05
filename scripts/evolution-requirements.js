@@ -45,6 +45,8 @@
  * Scope is the level-up screen only. No system files are edited.
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 const MODULE_ID = "PTRe1-Adjustment-Modules";
 
 let PTUPredicate = null;
@@ -350,7 +352,7 @@ function patchLevelUpData(proto) {
 }
 
 Hooks.once("setup", async () => {
-  if (game.system.id !== "ptu") return;
+  if (game.system.id !== "ptu" || !featureEnabled("evolutionAddons")) return;
   try {
     ({ PTUPredicate } = await import("/systems/ptu/src/module/system/predication.js"));
     const { LevelUpData } = await import("/systems/ptu/src/module/apps/level-up-form/document.js");
@@ -364,7 +366,7 @@ Hooks.once("setup", async () => {
 
 /** GM view: disable rows restoreBlockedRows() put back, with the reason. */
 Hooks.on("renderLevelUpForm", (app, html) => {
-  if (!game.user?.isGM) return;
+  if (!game.user?.isGM || !featureEnabled("evolutionAddons")) return;
   const entries = app?.data?.evolutions?.available;
   if (!entries?.length) return;
 
@@ -417,7 +419,7 @@ function translateRestriction(text, itemSlug) {
 }
 
 Hooks.once("ready", async () => {
-  if (game.system.id !== "ptu" || game.users.activeGM?.id !== game.user.id) return;
+  if (game.system.id !== "ptu" || game.users.activeGM?.id !== game.user.id || !featureEnabled("evolutionAddons")) return;
 
   const species = [
     ...game.items.filter((i) => i.type === "species"),

@@ -19,6 +19,8 @@
  * define a sheet currency in the GlitchSmith Library currency dialog pointing at
  * the trainer money path:  system.money  (integer).
  */
+
+import { featureEnabled } from "./feature-toggles.js";
  
 const MODULE_ID = "PTRe1-Adjustment-Modules";
 const SHOP_ID = "stylish-shop";
@@ -26,7 +28,7 @@ const DESCRIPTION_FIELDS = ["effect", "referenceEffect", "snippet"]; // first no
 const PRICE_FIELD = "cost"; // PTU item price (integer)
  
 Hooks.once("ready", () => {
-  if (game.system.id !== "ptu") return;
+  if (game.system.id !== "ptu" || !featureEnabled("shopAdapter")) return;
  
   const api = game.modules.get(SHOP_ID)?.api;
   if (!api?.registerSystemAdapter || !api?.getSystemAdapter) {

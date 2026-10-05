@@ -36,6 +36,8 @@
  * No-op unless DGA is active.
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 import { DGA, afterModuleInit } from "./dylan-modules.js";
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -228,7 +230,7 @@ function diagonalOnIce(token, changed, options) {
 Hooks.once("init", () => afterModuleInit(DGA, () => {
   Hooks.on("preUpdateToken", (token, changed, options) => {
     try {
-      if (diagonalOnIce(token, changed, options)) return false;
+      if (featureEnabled("iceCardinalOnly") && diagonalOnIce(token, changed, options)) return false;
     } catch (err) {
       console.error(`${MODULE_ID} | Ice diagonal check failed; move allowed.`, err);
     }
@@ -240,6 +242,12 @@ Hooks.once("init", () => afterModuleInit(DGA, () => {
     return;
   }
   const { TOKEN_ENTER, TOKEN_MOVE_WITHIN } = CONST.REGION_EVENTS;
-  cls.events = { [TOKEN_ENTER]: onTokenSlide, [TOKEN_MOVE_WITHIN]: onTokenSlide };
+  // Keep DGA's handlers so switching the fix off live hands control back to them.
+  const original = { ...cls.events };
+  const dispatch = (name) => function (event) {
+    if (featureEnabled("slidingIceFix")) return onTokenSlide.call(this, event);
+    return original[name]?.call(this, event);
+  };
+  cls.events = { [TOKEN_ENTER]: dispatch(TOKEN_ENTER), [TOKEN_MOVE_WITHIN]: dispatch(TOKEN_MOVE_WITHIN) };
   console.log(`${MODULE_ID} | Sliding Ice handler replaced (always releases the token).`);
 }));

@@ -47,6 +47,8 @@
  * matches classes by sluggified name, and the pack typos are fixed.
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 const MODULE_ID = "PTRe1-Adjustment-Modules";
 const RANKS = "Pathetic|Untrained|Novice|Adept|Expert|Master|Virtuoso";
 const RANK_RE = new RegExp(`\\b(${RANKS})\\b`, "i");
@@ -340,7 +342,7 @@ function wrapGetter(proto, name) {
 }
 
 Hooks.once("setup", async () => {
-  if (game.system.id !== "ptu") return;
+  if (game.system.id !== "ptu" || !featureEnabled("trainerPrereqOr")) return;
   try {
     ({ simplifyString, meetsPrereqsWithContext, buildActorPrereqContext } =
       await import("/systems/ptu/src/util/prereq-checker.js"));

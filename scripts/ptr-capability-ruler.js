@@ -13,6 +13,8 @@
  * Requires: libWrapper.  System: PTR 1e (ptu).
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 const MODULE_ID = "PTRe1-Adjustment-Modules";
 
 /* ------------------------------------------------------------------ *
@@ -118,6 +120,7 @@ function colorFor(cost, speed) {
 // and _getSegmentStyle(waypoint). `this` is the TokenRuler instance.
 function recolor(wrapped, waypoint, ...rest) {
   const style = wrapped(waypoint, ...rest);
+  if (!featureEnabled("capabilityRuler")) return style;
   try {
     if (DEBUG) console.log(`${MODULE_ID} | waypoint`, waypoint, "| style", style);
     if (style && style.alpha !== 0) {

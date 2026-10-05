@@ -1,3 +1,4 @@
+import { featureEnabled } from "./feature-toggles.js";
 import { RuleElements } from "/systems/ptu/src/module/rules/index.js";
 import { RULE_ELEMENT_FORMS } from "/systems/ptu/src/module/item/sheet/rule-elements/index.js";
 import { ConsumeItemRuleElement } from "./consume-item.js";
@@ -7,6 +8,7 @@ const MODULE_ID = "PTRe1-Adjustment-Modules";
 const TEMPLATE = `modules/${MODULE_ID}/templates/consume-item.hbs`;
 
 Hooks.once("init", () => {
+    if (!featureEnabled("consumeItem")) return;
     try {
         // Register the rule element into the system's custom registry.
         // RuleElements.all = { ...builtin, ...custom }, and the item sheet builds its

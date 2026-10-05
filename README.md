@@ -8,6 +8,25 @@ last 0.8.x release before the predicate rework on 4.4.3.44.
 
 All components are additive and register at runtime. **No system files are edited.**
 
+## Turning features on and off
+
+**Game Settings → Configure Settings → PTRe1 Adjustment Modules → Configure Adjustments** (GM
+only) opens a window listing every feature below. Each has a description and an on/off switch.
+Everything is on by default.
+
+- **Live** features take effect immediately.
+- **Reload** features patch the system or Foundry once at startup. Changing one asks to reload
+  the world. These are ConsumeItem, the evolution add-ons, the trainer OR-prerequisite fix, the
+  Automated Animations shim and the Stylish Shop adapter.
+- A feature whose required module isn't active is marked *Inactive* and does nothing either way.
+
+Switching off one of the DGA replacements (the cell picker, Sliding Ice, or Reinforcements' Via
+Script spawning) hands control back to DGA's own code. Switching off the Rock Climb / Waterfall
+behaviors brings back Pokémon Assets' old placement tools. The behaviors go inert but stay
+registered, so existing regions remain valid.
+
+The switches are stored as hidden world settings, `PTRe1-Adjustment-Modules.feature.<id>`.
+
 ## What's inside
 
 Independent components, each under `scripts/`.

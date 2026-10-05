@@ -36,6 +36,8 @@
  * Round End runs on the single active GM only. No-op unless DGA is active.
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 import { DGA, POKEMON_ASSETS, afterModuleInit } from "./dylan-modules.js";
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -122,7 +124,7 @@ async function spawnFromPlatform(tile, { combat = null, deleteOnSuccess = false,
  * ------------------------------------------------------------------ */
 
 Hooks.on("updateCombat", async (combat, changed, options) => {
-  if (!("round" in changed) || !dgaActive() || !isActiveGM()) return;
+  if (!("round" in changed) || !dgaActive() || !isActiveGM() || !featureEnabled("reinforcements")) return;
   // Forward only: nextRound / nextTurn pass direction 1, previousRound passes -1.
   const prev = combat.previous?.round;
   const forward = options?.direction !== undefined ? options.direction > 0 : (prev ?? 0) < changed.round;
@@ -151,7 +153,7 @@ Hooks.on("updateCombat", async (combat, changed, options) => {
  * ------------------------------------------------------------------ */
 
 Hooks.on("renderTileConfig", (app, html) => {
-  if (!dgaActive()) return;
+  if (!dgaActive() || !featureEnabled("reinforcements")) return;
   const root = typeof html?.querySelector === "function" ? html : html?.[0];
   const tile = app.document ?? app.object;
   const flag = platformFlag(tile);
@@ -211,7 +213,7 @@ Hooks.on("renderTileConfig", (app, html) => {
 let pendingUnlinked;
 
 Hooks.on("renderDialogV2", (app, html) => {
-  if (!dgaActive()) return;
+  if (!dgaActive() || !featureEnabled("reinforcements")) return;
   const root = typeof html?.querySelector === "function" ? html : app.element;
   const trigger = root?.querySelector('select[name="trigger"]');
   if (!trigger || !root.querySelector('item-drop-zone[allowed="Actor"]')) return;
@@ -244,9 +246,17 @@ function SpawnReinforcement(tile, { deleteOnSuccess = false } = {}) {
   return spawnFromPlatform(tile, { deleteOnSuccess });
 }
 
+// Wraps DGA's function so switching the feature off live restores DGA's own spawning.
 function installSpawn(module) {
   const scripts = module.api?.scripts;
-  if (scripts && "SpawnReinforcement" in scripts) scripts.SpawnReinforcement = SpawnReinforcement;
+  if (!scripts || !("SpawnReinforcement" in scripts) || scripts.SpawnReinforcement?.ptre1Wrapped) return;
+  const original = scripts.SpawnReinforcement;
+  const wrapped = function (...args) {
+    if (featureEnabled("reinforcements") || typeof original !== "function") return SpawnReinforcement(...args);
+    return original.apply(this, args);
+  };
+  wrapped.ptre1Wrapped = true;
+  scripts.SpawnReinforcement = wrapped;
 }
 
 Hooks.once("init", () => {

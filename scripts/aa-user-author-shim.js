@@ -12,7 +12,10 @@
  * On Foundry V13 (or anywhere `user` still exists) this is a harmless no-op.
  */
 
+import { featureEnabled } from "./feature-toggles.js";
+
 Hooks.once("setup", () => {
+  if (!featureEnabled("aaUserShim")) return;
   const cls =
     CONFIG.ChatMessage?.documentClass ??
     foundry?.documents?.ChatMessage ??

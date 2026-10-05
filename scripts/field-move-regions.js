@@ -23,6 +23,8 @@
  * No-op unless Pokémon Assets and DGA are active.
  */
 
+import { featureEnabled, onFeatureChange } from "./feature-toggles.js";
+
 import { DGA, POKEMON_ASSETS, afterModuleInit } from "./dylan-modules.js";
 
 const MODULE_ID = "PTRe1-Adjustment-Modules";
@@ -114,6 +116,7 @@ function playRockClimbDust(crossed) {
 
 /** DGA regionInteractions callback: (region, entry, token) -> handled? */
 async function onRegionInteract(region, entry, token) {
+  if (!featureEnabled("fieldMoveRegions")) return false;
   const [key] = fieldMoveBehavior(region);
   if (!key || !token) return false;
   const plan = planCrossing(region, token, entry);
@@ -153,7 +156,7 @@ function installMovementBlock() {
   const Base = CONFIG.Canvas.layers.tokens.layerClass;
   class TokenLayerFieldMoveRegions extends Base {
     isOccupiedGridSpaceBlocking(gridSpace, token, options = {}) {
-      if (crossing.has(token?.document?.id ?? token?.id)) return super.isOccupiedGridSpaceBlocking(gridSpace, token, options);
+      if (!featureEnabled("fieldMoveRegions") || crossing.has(token?.document?.id ?? token?.id)) return super.isOccupiedGridSpaceBlocking(gridSpace, token, options);
       const regions = canvas.scene?.regions?.contents ?? [];
       const point = canvas.grid.getCenterPoint(gridSpace);
       const blocked = regions.some((r) => {
@@ -172,6 +175,7 @@ function installMovementBlock() {
  * ------------------------------------------------------------------ */
 
 function removePlacementTools(controls) {
+  if (!featureEnabled("fieldMoveRegions")) return;
   const tools = controls?.regions?.tools;
   if (!tools) return;
   delete tools["rocky-wall"];
@@ -218,6 +222,9 @@ async function removeLegacyClimbRegions({ allScenes = false } = {}) {
  *  Registration
  * ------------------------------------------------------------------ */
 
+// Toggling live re-renders the scene controls so the old tools appear/disappear.
+onFeatureChange("fieldMoveRegions", () => ui.controls?.render?.({ reset: true }));
+
 Hooks.once("init", () => {
   if (!game.modules.get(DGA)?.active || !game.modules.get(POKEMON_ASSETS)?.active) return;
 
@@ -240,7 +247,7 @@ Hooks.once("init", () => {
     const interactions = game.modules.get(DGA)?.api?.regionInteractions;
     if (interactions) {
       interactions["ptre1-field-move-regions"] = {
-        eligible: (token) => Object.keys(MOVES).some((k) => !!partyMember(token, k)),
+        eligible: (token) => featureEnabled("fieldMoveRegions") && Object.keys(MOVES).some((k) => !!partyMember(token, k)),
         callback: onRegionInteract,
       };
     }
@@ -248,5 +255,5 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
-  if (game.user.isGM && game.modules.get(POKEMON_ASSETS)?.active) legacyReport();
+  if (game.user.isGM && game.modules.get(POKEMON_ASSETS)?.active && featureEnabled("fieldMoveRegions")) legacyReport();
 });

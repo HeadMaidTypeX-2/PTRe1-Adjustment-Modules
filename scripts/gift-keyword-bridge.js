@@ -9,6 +9,8 @@
  *
  * Install: drop this file in scripts/ and add it to module.json "esmodules".
  */
+
+import { featureEnabled } from "./feature-toggles.js";
  
 const SRT = "stylish-relationship-tracker";
 const norm = (s) => String(s ?? "").trim().toLowerCase();
@@ -29,11 +31,14 @@ async function syncItem(item) {
 Hooks.once("ready", async () => {
   // Keep new/edited items in sync going forward (all clients register; writes are GM-authoritative).
   for (const hook of ["createItem", "updateItem"]) {
-    Hooks.on(hook, (doc) => { syncItem(doc).catch((e) => console.warn(`${SRT} | keyword bridge sync failed`, e)); });
+    Hooks.on(hook, (doc) => {
+      if (!featureEnabled("giftKeywordBridge")) return;
+      syncItem(doc).catch((e) => console.warn(`${SRT} | keyword bridge sync failed`, e));
+    });
   }
  
   // One-time backfill of existing items — GM only, idempotent (skips already-synced items).
-  if (!game.user?.isGM) return;
+  if (!game.user?.isGM || !featureEnabled("giftKeywordBridge")) return;
   try {
     let n = 0;
     for (const item of game.items) if (await syncItem(item)) n++;
