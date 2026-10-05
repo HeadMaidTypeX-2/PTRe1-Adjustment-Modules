@@ -19,7 +19,9 @@
  * triggering step. This version waits for that step, then moves with token.move().
  *
  * Same behavior otherwise: slide cell by cell in the direction of the last step
- * until leaving the region (one cell past the edge) or hitting a wall, max 80.
+ * until the token's WHOLE footprint is off the region or it hits a wall, max 80.
+ * (DGA tested only the centre point, so a token stopped half on the ice whenever
+ * the region's edges weren't exactly on grid lines.)
  * The direction now comes from the last movement segment rather than the whole
  * drag's origin, so a multi-waypoint drag slides the way it entered the ice.
  *
@@ -55,6 +57,27 @@ function settle(promise) {
   ]);
 }
 
+/**
+ * Does any part of the token's footprint (centred on `center`, half-size hx/hy)
+ * lie inside the region? Samples a grid of points every half cell, inset 1px so
+ * a token sitting exactly against the region's edge doesn't count as inside.
+ */
+function overlapsRegion(region, center, hx, hy, elevation) {
+  const inset = 1;
+  const { sizeX, sizeY } = canvas.grid;
+  const nx = Math.max(2, Math.round((hx * 2) / (sizeX / 2)));
+  const ny = Math.max(2, Math.round((hy * 2) / (sizeY / 2)));
+  const x0 = center.x - hx + inset, w = hx * 2 - inset * 2;
+  const y0 = center.y - hy + inset, h = hy * 2 - inset * 2;
+  for (let i = 0; i <= nx; i++) {
+    for (let j = 0; j <= ny; j++) {
+      const point = { x: x0 + (w * i) / nx, y: y0 + (h * j) / ny, elevation };
+      if (region.testPoint(point, elevation)) return true;
+    }
+  }
+  return false;
+}
+
 async function slide(behavior, token, movement) {
   const { region, scene } = behavior;
   const { sizeX, sizeY } = scene.grid;
@@ -76,7 +99,7 @@ async function slide(behavior, token, movement) {
 
   let end = start;
   for (let n = 1; n < MAX_STEPS; n++) {
-    if (n > 1 && !region.testPoint(end, elevation)) break; // stepped off the ice
+    if (n > 1 && !overlapsRegion(region, end, hx, hy, elevation)) break; // fully off the ice
     const next = { x: start.x + dx * n, y: start.y + dy * n, elevation };
     if (collides(tokenObj, start, next)) break;
     end = next;
@@ -160,7 +183,7 @@ function diagonalOnIce(token, changed, options) {
   const elevation = token.elevation ?? 0;
   const onIce = (offset) => {
     const c = canvas.grid.getCenterPoint(offset);
-    return ice.some((r) => r.testPoint({ x: c.x, y: c.y, elevation }, elevation));
+    return ice.some((r) => overlapsRegion(r, c, sizeX / 2, sizeY / 2, elevation));
   };
   for (let k = 1; k < path.length; k++) {
     const a = path[k - 1];
