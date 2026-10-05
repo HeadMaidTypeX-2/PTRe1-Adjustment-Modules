@@ -23,6 +23,11 @@
  * The direction now comes from the last movement segment rather than the whole
  * drag's origin, so a multi-waypoint drag slides the way it entered the ice.
  *
+ * Cardinal only on ice: on square grids, any diagonal step that starts or ends on
+ * a Sliding Ice cell is cancelled in preUpdateToken (the token stays put), as in
+ * the games. Scripted moves that ignore walls (field moves, climbs) and teleports
+ * are exempt. This applies to GM drags too: drag across ice in straight lines.
+ *
  * No-op unless DGA is active.
  */
 
@@ -118,7 +123,62 @@ async function onTokenSlide(event) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ *  Cardinal-only movement on ice
+ * ------------------------------------------------------------------ */
+
+function iceRegions(scene) {
+  return scene.regions.filter((r) => r.behaviors.some((b) => b.type === ICE_TYPE && !b.disabled));
+}
+
+function isTeleport(waypoint) {
+  const action = waypoint?.action;
+  return !!action && (action === "displace" || !!CONFIG.Token.movement?.actions?.[action]?.teleport);
+}
+
+/** True when the update moves the token diagonally from or onto an ice cell. */
+function diagonalOnIce(token, changed, options) {
+  if (!("x" in changed) && !("y" in changed)) return false;
+  const scene = token.parent;
+  if (!scene || scene !== canvas.scene || !canvas.grid?.isSquare) return false;
+  const ice = iceRegions(scene);
+  if (!ice.length) return false;
+
+  const move = options?.movement?.[token.id];
+  if (move?.constrainOptions?.ignoreWalls) return false;
+  const waypoints = move?.waypoints?.length
+    ? move.waypoints
+    : [{ x: changed.x ?? token.x, y: changed.y ?? token.y }];
+  if (waypoints.some(isTeleport)) return false;
+
+  const { sizeX, sizeY } = scene.grid;
+  const hx = ((token.width ?? 1) * sizeX) / 2;
+  const hy = ((token.height ?? 1) * sizeY) / 2;
+  const centers = [{ x: token.x, y: token.y }, ...waypoints].map((p) => ({ x: p.x + hx, y: p.y + hy }));
+  const path = canvas.grid.getDirectPath(centers);
+
+  const elevation = token.elevation ?? 0;
+  const onIce = (offset) => {
+    const c = canvas.grid.getCenterPoint(offset);
+    return ice.some((r) => r.testPoint({ x: c.x, y: c.y, elevation }, elevation));
+  };
+  for (let k = 1; k < path.length; k++) {
+    const a = path[k - 1];
+    const b = path[k];
+    if (a.i !== b.i && a.j !== b.j && (onIce(a) || onIce(b))) return true;
+  }
+  return false;
+}
+
 Hooks.once("init", () => afterModuleInit(DGA, () => {
+  Hooks.on("preUpdateToken", (token, changed, options) => {
+    try {
+      if (diagonalOnIce(token, changed, options)) return false;
+    } catch (err) {
+      console.error(`${MODULE_ID} | Ice diagonal check failed; move allowed.`, err);
+    }
+  });
+
   const cls = CONFIG.RegionBehavior?.dataModels?.[ICE_TYPE];
   if (!cls) {
     console.warn(`${MODULE_ID} | Sliding Ice fix: '${ICE_TYPE}' is not registered; DGA may have renamed it. Fix not applied.`);
