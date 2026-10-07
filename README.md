@@ -39,6 +39,13 @@ Independent components, each under `scripts/`.
   `system.typing`, so they still showed the species types. This copies the override onto
   `system.typing` after the rules run. It is redundant once PTR fixes it upstream.
   *(Requires libWrapper.)*
+- **`battle-transitions-fix.js`** — for Battle Transitions 2.0.14 running on V14 (its manifest
+  caps it at V13). Its auto-trigger watches `Scene#update` for activation, which V14's new
+  `Scene#activate` bypasses, so auto-trigger scenes never played. This catches activation in
+  `preUpdateScene` and plays the transition for everyone. Optionally, viewing an auto-trigger
+  scene plays it for the viewing user only. Two Live toggles. If a scene won't trigger, run
+  `game.modules.get("PTRe1-Adjustment-Modules").api.battleTransitions.diagnose()`.
+  *(Requires libWrapper; no-op without Battle Transitions.)* Not yet tested in play.
 
 1. **`ptr-capability-ruler.js`** — recolours the native token drag-ruler
    (green / yellow / red) based on the dragged token's movement capability for the

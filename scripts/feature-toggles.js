@@ -61,6 +61,16 @@ export const FEATURES = [
     title: "Item keywords as gift tags",
     description: "Copies each item's PTU keywords into Stylish Relationship Tracker's gift tags (lowercased, add-only — tags you added by hand are never removed). Syncs on item create/update; the GM backfills existing items on load.",
   },
+  {
+    id: "btActivateTrigger", group: "Module integrations", live: true, requires: ["battle-transitions"],
+    title: "Battle Transitions: auto-trigger on Activate (V14)",
+    description: "Battle Transitions 2.0.14 can't see scene activation on V14, so scenes set to auto-trigger never play their transition. This catches the activation and plays the scene's transition for everyone, as it did on V13. Scenes marked 'bypass transition' are skipped. If a scene still doesn't trigger, run game.modules.get('PTRe1-Adjustment-Modules').api.battleTransitions.diagnose() in the console.",
+  },
+  {
+    id: "btViewTrigger", group: "Module integrations", live: true, requires: ["battle-transitions"],
+    title: "Battle Transitions: auto-trigger on View",
+    description: "Also plays an auto-trigger scene's transition when you View it (not just Activate). View is local, so only the user viewing sees it. Viewing the scene that is already active never triggers.",
+  },
 
   // --- Pokémon Assets / DGA -------------------------------------------------
   {
