@@ -2,7 +2,7 @@
 
 A small bundle of fixes and infrastructure for a **PTU** (system id `ptu`) world on
 **Foundry V13/V14**, kept in one module so it installs and updates from one place.
-Targets the PTR **release** line (`righthandofvecna/fvtt-ptr`), **`4.4.3.46` or later**.
+Targets the PTR **release** line (`righthandofvecna/fvtt-ptr`), **`4.4.3.49` or later**.
 Earlier releases of this module match earlier system versions: use 0.7.0 on 4.4.3.37, and the
 last 0.8.x release before the predicate rework on 4.4.3.44.
 
@@ -17,7 +17,7 @@ Everything is on by default.
 - **Live** features take effect immediately.
 - **Reload** features patch the system or Foundry once at startup. Changing one asks to reload
   the world. These are ConsumeItem, the evolution add-ons, the trainer OR-prerequisite fix, the
-  rule-element synthetics fix, the Automated Animations shim and the Stylish Shop adapter.
+  Automated Animations shim and the Stylish Shop adapter.
 - A feature whose required module isn't active is marked *Inactive* and does nothing either way.
 
 Switching off one of the DGA replacements (the cell picker, Sliding Ice, or Reinforcements' Via
@@ -33,16 +33,12 @@ Independent components, each under `scripts/`.
 
 ### Foundry / integration fixes
 
-- **`synthetics-reset-fix.js`** — repairs rule elements broken by PTR 4.4.3.46 (still broken
-  in 4.4.3.47). That release resets rule-element results inside `prepareSynthetics`, which runs
-  at the start of both halves of actor preparation. The second reset wipes everything written
-  in `afterPrepareData` at the default priority. This carries those results across the second
-  reset, so the following work again:
-  - **TypeOverwrite**: type changes reach the Pokémon's typing and `actor.types`;
-  - **AP** drain / bind;
-  - **EphemeralEffect**;
-  - **TokenImage / TokenLight / TokenName**.
-  It is redundant but harmless once PTR fixes this upstream. *(Requires libWrapper.)*
+- **`type-overwrite-display-fix.js`** — since PTR 4.4.3.48, TypeOverwrite works in combat
+  (STAB, damage, type effectiveness all read `actor.types`). But a Pokémon's `system.typing` is
+  calculated before rule elements run. The sheet's type icons and damage preview read
+  `system.typing`, so they still showed the species types. This copies the override onto
+  `system.typing` after the rules run. It is redundant once PTR fixes it upstream.
+  *(Requires libWrapper.)*
 
 1. **`ptr-capability-ruler.js`** — recolours the native token drag-ruler
    (green / yellow / red) based on the dragged token's movement capability for the
@@ -213,7 +209,7 @@ removed. Component 6 now only adds to the native system.
 ## Requirements
 
 - Foundry VTT V13 or V14
-- System: `ptu` (PTR release line, `4.4.3.46` or later)
+- System: `ptu` (PTR release line, `4.4.3.49` or later)
 - [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) (declared as a required dependency)
 
 ## Install

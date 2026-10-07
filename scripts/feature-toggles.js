@@ -40,9 +40,9 @@ export const FEATURES = [
   },
 
   {
-    id: "syntheticsResetFix", group: "PTR system", live: false,
-    title: "Rule elements broken by 4.4.3.46 (TypeOverwrite & co.)",
-    description: "PTR 4.4.3.46 resets rule-element results between the two halves of actor preparation, which wipes anything written after the first half. This keeps those results so these rule elements work again: TypeOverwrite (type changes), AP drain / bind, EphemeralEffect, and TokenImage / TokenLight / TokenName. Redundant but harmless once PTR fixes it upstream.",
+    id: "typeOverwriteDisplay", group: "PTR system", live: true,
+    title: "TypeOverwrite on the Pokémon sheet",
+    description: "Since PTR 4.4.3.48 TypeOverwrite works in combat (STAB, damage, type effectiveness), but the Pokémon sheet's type icons and damage preview still show the species types, because the sheet's typing is calculated before rule elements run. This copies the overwritten types onto the sheet once the rules have run. Redundant once PTR fixes it upstream.",
   },
 
   // --- Integrations ---------------------------------------------------------
