@@ -159,8 +159,9 @@ function evolutionOptions(data) {
   ]);
 }
 
-const passes = (predicate, options) =>
-  !!PTUPredicate && (predicate?.length ?? 0) > 0 && PTUPredicate.test(predicate, options);
+// Matches LevelUpData#refresh since PTR commit 7225dd37 ("Allow complex predicates for
+// evolutions"): an empty predicate passes, so the row is offered.
+const passes = (predicate, options) => !!PTUPredicate && PTUPredicate.test(predicate ?? [], options);
 
 /* ──────────────────────────── source-species rows ──────────────────────────── */
 

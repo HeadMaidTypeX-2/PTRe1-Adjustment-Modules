@@ -60,6 +60,16 @@ const SKILL_LIST_RE = new RegExp(`\\b((?:${N_WORD}) of )(.+?)( at (?:${RANKS})\\
 /** Labels the system checker always passes / always fails. */
 const PASS = "";
 const FAIL = "ptre-unmet";
+/** Inside an "A: …" group line the pass label must be non-empty: GROUP_MEMBER_RE needs text after the colon. */
+const GROUP_PASS = "Level 1";
+
+// PTR 4.4.3.5x formats evaluated by meetsPrereqsWithContext itself (prereq-checker.js):
+//   "All A or B options" header + "A: …" / "B: …" member lines -> one whole group must pass;
+//   "Does not have X" -> negation. The header and negations are left alone; a member
+//   line is repaired like any other but keeps its "A:" prefix so the grouping survives.
+const ALL_OPTIONS_RE = /^All [A-Z](?: or [A-Z])+ options$/i;
+const GROUP_MEMBER_RE = /^([A-Z]):\s*(.+)$/is;
+const NEGATION_RE = /^does not have /i;
 
 const RANKED_RE = new RegExp(`^((?:[A-Z]:\\s*)?(?:${RANKS}) )(.+)$`, "i");
 /** "Adept in 2 Rogue Skills" — the class feature's own prerequisite skills. */
@@ -263,13 +273,21 @@ function resolveEntries(entries, ctx, originals) {
         j++;
         label = `${label} ${prereqs[j].label.trim()}`;
       }
-      const groups = optionsFor(label);
+      const text = typeof label === "string" ? label.trim() : label;
+      if (typeof text === "string" && (ALL_OPTIONS_RE.test(text) || NEGATION_RE.test(text))) {
+        next.push(prereqs[i]);
+        continue;
+      }
+      const member = typeof text === "string" ? GROUP_MEMBER_RE.exec(text) : null;
+      const groups = optionsFor(member ? member[2].trim() : label);
       if (!groups) {
         next.push(prereqs[i]);
         continue;
       }
       changed = true;
-      next.push({ ...prereqs[i], label: labelMet(groups, ctx) ? PASS : FAIL });
+      const met = labelMet(groups, ctx);
+      const resolved = member ? `${member[1]}: ${met ? GROUP_PASS : FAIL}` : (met ? PASS : FAIL);
+      next.push({ ...prereqs[i], label: resolved });
       for (let k = i + 1; k <= j; k++) next.push({ ...prereqs[k], label: PASS });
       i = j;
     }
@@ -361,4 +379,4 @@ Hooks.once("setup", async () => {
   }
 });
 
-export { normalise, optionsFor };
+export { normalise, optionsFor, resolveEntries };

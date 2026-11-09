@@ -2,7 +2,7 @@
 
 A small bundle of fixes and infrastructure for a **PTU** (system id `ptu`) world on
 **Foundry V13/V14**, kept in one module so it installs and updates from one place.
-Targets the PTR **release** line (`righthandofvecna/fvtt-ptr`), **`4.4.3.49` or later**.
+Targets the PTR **release** line (`righthandofvecna/fvtt-ptr`), **`4.4.3.57` or later**.
 Earlier releases of this module match earlier system versions: use 0.7.0 on 4.4.3.37, and the
 last 0.8.x release before the predicate rework on 4.4.3.44.
 
@@ -33,12 +33,6 @@ Independent components, each under `scripts/`.
 
 ### Foundry / integration fixes
 
-- **`type-overwrite-display-fix.js`** — since PTR 4.4.3.48, TypeOverwrite works in combat
-  (STAB, damage, type effectiveness all read `actor.types`). But a Pokémon's `system.typing` is
-  calculated before rule elements run. The sheet's type icons and damage preview read
-  `system.typing`, so they still showed the species types. This copies the override onto
-  `system.typing` after the rules run. It is redundant once PTR fixes it upstream.
-  *(Requires libWrapper.)*
 - **`battle-transitions-fix.js`** — for Battle Transitions 2.0.14 running on V14 (its manifest
   caps it at V13). Its auto-trigger watches `Scene#update` for activation, which V14's new
   `Scene#activate` bypasses, so auto-trigger scenes never played. This catches activation in
@@ -84,11 +78,6 @@ Independent components, each under `scripts/`.
 
 Each is a no-op unless Dylan's General Automations (DGA) is active.
 
-- **`paint-area-fix.js`** — replaces DGA's `UserPaintArea` cell picker, used by Pokémon
-  Assets' *Place Climbable Rocks* / *Place Waterfall* and DGA's Door destination. The original
-  is a MeasuredTemplate subclass that can stall the canvas render loop (token animations stop).
-  The replacement draws a plain square, never switches layers, and keeps the same contract:
-  left-click resolves the cell, right-click or Escape cancels.
 - **`sliding-ice-fix.js`** — replaces the Sliding Ice region behavior's handler with one that
   always releases the token, even on error. The original could leave a token permanently
   locked until reload. Slides start from the token's grid-snapped position and stop only
@@ -115,15 +104,14 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   `game.modules.get("PTRe1-Adjustment-Modules").api.removeLegacyClimbRegions()` deletes them.
   Needs Pokémon Assets and DGA. The world must be relaunched once so Foundry picks up the new
   behavior types.
-- **`reinforcement-round-end.js`** — implements the Reinforcements Platform's *Round End*
-  trigger, which DGA offers but never runs. At the end of each combat round (from a per-tile
-  starting round), every enabled Round End platform spawns one reinforcement and adds it to
-  the combat. Tile Config gains a *Reinforcements* section (trigger, enabled, starting round).
-  Compendium actors are imported once and reused; an occupied platform waits.
-  A per-tile **Spawn unlinked tokens** toggle (default on, also shown in the placement dialog)
-  gives each spawn its own copy of the actor. PTR forces actors to be linked, so without it
-  every spawn shares one sheet. It also applies to the *Via Script* trigger, but not to DGA's
-  *Scene Creation* trigger.
+- **`reinforcement-unlinked.js`** — DGA 1.0.8+ runs the Reinforcements Platform's triggers
+  itself, including Round End, start round, wait-while-occupied and adding spawns to combat.
+  This module's own Round End handler was removed, because running both spawned every
+  platform twice. What remains is a per-tile **Spawn unlinked tokens** option, default on, shown
+  in the placement dialog and in DGA's Reinforcements section of Tile Config. PTR forces
+  actors to be linked, so without it every spawn from one actor shares one sheet. It covers all
+  three triggers. Platforms configured with the old Round End fields have their start round
+  copied into DGA's own setting on first load.
 
 ### Rule elements & mechanics
 
@@ -216,7 +204,9 @@ removed. Component 6 now only adds to the native system.
 ## Requirements
 
 - Foundry VTT V13 or V14
-- System: `ptu` (PTR release line, `4.4.3.49` or later)
+- System: `ptu` (PTR release line, `4.4.3.57` or later)
+- Optional: Dylan's General Automations **1.0.8+** and Pokémon Assets 1.0.8+ for the
+  Pokémon Assets / DGA fixes
 - [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) (declared as a required dependency)
 
 ## Install

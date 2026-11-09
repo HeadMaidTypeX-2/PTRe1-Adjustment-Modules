@@ -39,11 +39,6 @@ export const FEATURES = [
     description: "Fixes the Trainer Level-Up wizard so prerequisites with alternatives (\"Adept Guile or Stealth\", \"Level 10 or Two of …\") test every option, and reads several known PTR data typos. The window still shows PTR's original prerequisite text.",
   },
 
-  {
-    id: "typeOverwriteDisplay", group: "PTR system", live: true,
-    title: "TypeOverwrite on the Pokémon sheet",
-    description: "Since PTR 4.4.3.48 TypeOverwrite works in combat (STAB, damage, type effectiveness), but the Pokémon sheet's type icons and damage preview still show the species types, because the sheet's typing is calculated before rule elements run. This copies the overwritten types onto the sheet once the rules have run. Redundant once PTR fixes it upstream.",
-  },
 
   // --- Integrations ---------------------------------------------------------
   {
@@ -74,11 +69,6 @@ export const FEATURES = [
 
   // --- Pokémon Assets / DGA -------------------------------------------------
   {
-    id: "paintAreaFix", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations"],
-    title: "Canvas-safe cell picker",
-    description: "Replaces DGA's 'pick a cell' tool (Door destinations, the old climb tools) with one that never switches layers or uses a measured template, which could freeze the canvas. Left-click picks, right-click or Escape cancels. DGA has adopted this upstream; once that release is installed this is redundant but harmless.",
-  },
-  {
     id: "slidingIceFix", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations"],
     title: "Sliding Ice fixes",
     description: "Replaces the Sliding Ice behavior's handler: tokens are always released (never stuck until reload), slides start from the token's grid-snapped position, stop only when the token is completely off the ice (holes included), and stop beside walls and solid tiles instead of half inside them. Turning this off restores DGA's original handler.",
@@ -90,8 +80,8 @@ export const FEATURES = [
   },
   {
     id: "reinforcements", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations"],
-    title: "Reinforcements Platform: Round End & unlinked spawns",
-    description: "Implements the platform's Round End trigger (one reinforcement each round from a chosen round, added to the combat), adds a Reinforcements section to Tile Config, and a per-tile 'Spawn unlinked tokens' option so spawns don't share one sheet. Also applies to the Via Script trigger. Turning this off restores DGA's own spawning; Round End platforms then do nothing.",
+    title: "Reinforcements Platform: unlinked spawns",
+    description: "DGA 1.0.8+ handles the platform's triggers, start round and waiting itself. This adds a per-tile 'Spawn unlinked tokens' option (in the placement dialog and DGA's Reinforcements section of Tile Config, default on), so reinforcements spawned from one actor don't share one sheet — PTR forces every actor to be linked. Turning this off spawns linked tokens again.",
   },
   {
     id: "fieldMoveRegions", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
