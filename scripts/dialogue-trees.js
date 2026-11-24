@@ -1474,14 +1474,17 @@ const STYLE = `
 
   /* ---- per-letter effects: each slot (motion / colour / reveal) can be combined ---- */
   .ptre1-word { display: inline-block; white-space: nowrap; }
+  /* The reveal slot (typewriter) keeps letter N hidden for N x step, then simply ends: no
+     fill-mode holding a final state and no opacity (which runs on the compositor and could
+     flicker or leave letters invisible on a busy canvas). Once it ends, the letter is visible. */
   .ptre1-ch {
     display: inline-block; white-space: pre;
     animation-name: var(--fx-m, none), var(--fx-c, none), var(--fx-r, none);
-    animation-duration: var(--fx-md, 1s), var(--fx-cd, 1s), var(--fx-rd, 1ms);
-    animation-timing-function: ease-in-out, linear, steps(1, end);
+    animation-duration: var(--fx-md, 1s), var(--fx-cd, 1s), calc(var(--i, 0) * var(--fx-rs, 0s));
+    animation-timing-function: ease-in-out, linear, linear;
     animation-iteration-count: infinite, infinite, 1;
-    animation-fill-mode: none, none, both;
-    animation-delay: calc(var(--i, 0) * var(--fx-ms, 0s)), calc(var(--i, 0) * var(--fx-cs, 0s)), calc(var(--i, 0) * var(--fx-rs, 0s));
+    animation-fill-mode: none, none, none;
+    animation-delay: calc(var(--i, 0) * var(--fx-ms, 0s)), calc(var(--i, 0) * var(--fx-cs, 0s)), 0s;
   }
   .ptre1-fx-wave { --fx-m: ptre1-wave; --fx-md: 1.2s; --fx-ms: -0.1s; }
   .ptre1-fx-wave2 { --fx-m: ptre1-wave2; --fx-md: 1.4s; --fx-ms: -0.1s; }
@@ -1521,7 +1524,7 @@ const STYLE = `
     0%, 100% { color: #d8342c; } 17% { color: #e0731a; } 33% { color: #c99a00; }
     50% { color: #2a9a3f; } 67% { color: #2f6fdb; } 83% { color: #8a4fd1; }
   }
-  @keyframes ptre1-type { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ptre1-type { from, to { visibility: hidden; } }
 
   @media (prefers-reduced-motion: reduce) {
     .ptre1-ch, .ptre1-fx-shake, .ptre1-fx-pulse, .ptre1-fx-slide, .ptre1-fx-scroll > span { animation: none !important; }
