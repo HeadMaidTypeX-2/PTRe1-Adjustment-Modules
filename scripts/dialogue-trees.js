@@ -429,6 +429,7 @@ async function showButtons(title, html, labels) {
   blip();
   const result = await Dialog.wait({
     window: { title },
+    classes: ["ptre1-dialogue-box"],
     content: footer ? `<div class="dialog-content">${html}</div>` : html,
     buttons: labels.map((label, i) => ({ action: `choice${i}`, label, default: i === 0 })),
     rejectClose: false,
@@ -1455,6 +1456,27 @@ const STYLE = `
   details.ptre1-dialogue { border: 1px solid var(--color-border-light-2, rgba(128,128,128,.4)); border-radius: 4px; padding: 0.25rem 0.5rem; margin: 0.5rem 0; }
   details.ptre1-dialogue > summary { cursor: pointer; font-weight: bold; padding: 0.25rem 0; }
   .ptre1-dlg-speaker { font-weight: bold; }
+
+  /* ---- choice box layout ----
+     pokemon-assets pins DGA's choice footer to the box's right edge (absolute, top/bottom 0), so
+     its height is the box's, which depends on the text, not the choices. Short text + several
+     choices made the column wrap into a second column that ran off the right edge. Here the text
+     and the choices sit side by side in normal flow: the text wraps in what's left, and the box
+     (anchored to the bottom of the screen) grows upward to fit every choice. */
+  .dga.footer-dialog.ptre1-dialogue-box.dialog-choices .window-content form.dialog-form {
+    display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 1em;
+  }
+  .dga.footer-dialog.ptre1-dialogue-box.dialog-choices .window-content form.dialog-form > .dialog-content {
+    flex: 1 1 auto; min-width: 0; align-self: stretch; overflow-wrap: anywhere;
+  }
+  .dga.footer-dialog.ptre1-dialogue-box.dialog-choices footer {
+    position: static; flex: 0 1 auto; flex-direction: column; flex-wrap: nowrap;
+    align-items: stretch; max-width: 45%; max-height: 60vh; overflow-y: auto; padding: 0 0 0 0.5em;
+  }
+  .dga.footer-dialog.ptre1-dialogue-box.dialog-choices footer > button {
+    flex: 0 0 auto; height: auto; min-height: calc(1.25 * var(--input-height, 2rem));
+    white-space: normal; text-align: left; justify-content: flex-start; line-height: 1.1;
+  }
 
   /* ---- whole-span effects ---- */
   .ptre1-fx-big { font-size: 1.35em; }
