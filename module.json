@@ -26,8 +26,6 @@
     "scripts/field-move-regions.js",
     "scripts/field-move-cry.js",
     "scripts/dialogue-trees.js",
-    "scripts/type-overwrite-display-fix.js",
-
     "scripts/battle-transitions-fix.js"
   ],
   "languages": [
