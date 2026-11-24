@@ -138,6 +138,77 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   every spawn shares one sheet. It also applies to the *Via Script* trigger, but not to DGA's
   *Scene Creation* trigger.
 
+### Scenes & regions
+
+- **`dialogue-trees.js`** — dialogue scripts played in the text box (DGA's footer box when DGA
+  is active, a Foundry dialog otherwise), on regions and tiles.
+
+  **Regions:** add a **Dialogue** Region Behavior.
+  - *Start with*: **Interact** (default; face the region and press DGA's Interact key, Enter,
+    as with Surf and Rock Climb; needs DGA, otherwise walking in is used) or **Walking in**.
+  - *Block entry* (default on): tokens can't walk in until the dialogue ends in `!enter`; a
+    move into the region stops at its edge. With Interact, `!enter` steps the token one cell in;
+    with Walking in, it finishes the move. This is the boss-room threshold. Turned off, tokens
+    walk in freely and the dialogue simply plays: a sign, a warning, an NPC area.
+
+  **Tiles:** Tile Config has a **Dialogue** section (enable it, write the script). A token facing
+  the tile and pressing Interact plays it. Needs DGA. `!enter`/`!done` and `!stay` only matter
+  for *Ask again* on tiles.
+
+  The script, for example a threshold:
+
+  ```
+  [start]
+  !if not item:rising-badge -> unprepared
+  You feel an ominous presence beyond this threshold...
+  ---
+  Are you sure you are ready to proceed?
+  > Yes -> enter
+  > No -> leave
+
+  [unprepared]
+  Your Pokémon seem uneasy without the badge...
+  > Go in anyway -> weak
+  > Turn back -> leave
+
+  [weak]
+  !macro Boss Disadvantage
+  !enter
+
+  [enter]
+  !macro Boss Intro
+  !enter
+
+  [leave]
+  You tremble away from the threshold... for now.
+  !stay
+  ```
+
+  | Line | Meaning |
+  |---|---|
+  | `[name]` | starts a node; text before the first one belongs to `[start]` |
+  | text | a page; a blank line or `---` starts the next page |
+  | `> Label -> node` | a choice, shown with the node's last page |
+  | `> Label [check] -> node` | a choice offered only if the check passes |
+  | `-> node` | jump |
+  | `!if check -> node` | jump if the check passes, otherwise carry on |
+  | `!macro Name` | run a macro (name or UUID); it gets `actor`, `token`, `region`, `behavior`, `tile`, `node`, `party` |
+  | `!enter` (or `!done`) / `!stay` | end in success (let the token in) / end without (keep it out); a node that just ends counts as `!stay` |
+  | `// …` | comment |
+
+  Checks are PTR predicates tested against the whole party: the token's actor, its trainer,
+  and the trainer's unboxed Pokémon. Besides their roll options there are `item:<slug>` for
+  every owned item, `species:<slug>`, `self:level:N` for each Pokémon, `trainer:level:N`,
+  `party:size:N` and `user:gm`. Write `a, b` for both, `a | b` for either, `not a`, or a
+  JSON predicate. Examples: `item:rising-badge`, `self:level:40+`, `party:size:3+`.
+
+  *Ask again* (regions and tiles) picks whether a dialogue that ended in `!enter`/`!done` plays
+  again: every time, once per token, or once per actor.
+  `game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.reset()` makes everyone answer
+  again. On regions, GM moves aren't blocked and don't start Walking-in dialogues unless *Ask
+  the GM too* is on; pressing Interact always works. The world must be relaunched once so
+  Foundry picks up the new behavior type.
+
 ### Rule elements & mechanics
 
 5. **ConsumeItem rule element** — `init.js`, `consume-item-form.js`, `consume-item.js`.

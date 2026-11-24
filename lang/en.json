@@ -30,7 +30,8 @@
   "TYPES": {
     "RegionBehavior": {
       "PTRe1-Adjustment-Modules.rockClimb": "Rock Climb",
-      "PTRe1-Adjustment-Modules.waterfall": "Waterfall"
+      "PTRe1-Adjustment-Modules.waterfall": "Waterfall",
+      "PTRe1-Adjustment-Modules.dialogue": "Dialogue"
     }
   }
 }

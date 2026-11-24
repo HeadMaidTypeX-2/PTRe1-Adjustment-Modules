@@ -26,6 +26,7 @@
     "scripts/trainer-prereq-or-fix.js",
     "scripts/field-move-regions.js",
     "scripts/field-move-cry.js",
+    "scripts/dialogue-trees.js",
     "scripts/type-overwrite-display-fix.js",
     "scripts/battle-transitions-fix.js"
   ],
@@ -62,7 +63,8 @@
   "documentTypes": {
     "RegionBehavior": {
       "rockClimb": {},
-      "waterfall": {}
+      "waterfall": {},
+      "dialogue": {}
     }
   }
 }

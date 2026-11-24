@@ -45,6 +45,13 @@ export const FEATURES = [
     description: "Since PTR 4.4.3.48 TypeOverwrite works in combat (STAB, damage, type effectiveness), but the Pokémon sheet's type icons and damage preview still show the species types, because the sheet's typing is calculated before rule elements run. This copies the overwritten types onto the sheet once the rules have run. Redundant once PTR fixes it upstream.",
   },
 
+  // --- Scenes & regions -----------------------------------------------------
+  {
+    id: "dialogues", group: "Scenes & regions", live: true,
+    title: "Dialogue trees (regions & tiles)",
+    description: "Dialogue scripts played in the text box, with pages, choices, prerequisite checks against the party (PTR predicates such as item:rising-badge or self:level:40+) and macros. On regions, as a Dialogue Region Behavior started by Interact (facing it and pressing Enter) or by walking in, optionally blocking entry until the dialogue lets the token in, like a boss-room threshold. On tiles, from a Dialogue section in Tile Config, started by Interact. Uses Dylan's footer text box when DGA is active. Turning this off stops all dialogues and blocking; the settings stay on the regions and tiles.",
+  },
+
   // --- Integrations ---------------------------------------------------------
   {
     id: "aaUserShim", group: "Module integrations", live: false,
