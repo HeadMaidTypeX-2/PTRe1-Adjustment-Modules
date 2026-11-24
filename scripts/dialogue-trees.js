@@ -2,8 +2,8 @@
  * Dialogue trees — regions and tiles
  * ----------------------------------
  * A small dialogue script played in the text box (DGA's footer box when DGA is
- * active, Foundry dialogs otherwise), with pages, choices, prerequisite checks
- * against the party, and macros. It can be attached to:
+ * active, Foundry dialogs otherwise), with pages, choices, checks against the
+ * party, rolls, costs, memory flags and macros. It can be attached to:
  *
  *   - Regions, as a "Dialogue" Region Behavior (PTRe1-Adjustment-Modules.dialogue):
  *       Start with  Interact (face the region, press DGA's Interact key / Enter)
@@ -15,55 +15,61 @@
  *   - Tiles, from a Dialogue section in Tile Config: face the tile and press
  *     Interact. Needs DGA.
  *
- * Script:
+ * Each text box opens with DGA's interaction sound, as its field moves do.
+ * The full syntax is in the README; in short:
  *
- *   [start]                       a node; lines before the first [label] belong to "start"
- *   You feel an ominous presence…  text; a blank line or --- starts a new page
- *   ---
- *   Are you sure you are ready?
- *   > Yes -> ready                a choice button: label -> target node
- *   > Show the badge [item:rising-badge] -> ready   only offered if the check passes
- *   > No -> leave
+ *   [node]                         start a node ("start" is first)
+ *   text                           a page; blank line or --- for the next page
+ *   {red}…{/} {#3cf}…{/} {b} {i} {u} {big} {small} {shake}   styles; {/} closes
+ *   {trainer} {pokemon} {lead} {actor} {user} {flag:x} {actor:x} {world:x}   names / values
+ *   @Name  /  @Name: text  /  @    speaker shown before the text (@ alone clears it)
+ *   > Label -> node                choice;  > Label [check] -> node  only if the check passes
+ *   -> node                        jump
+ *   !if <check> -> node            jump if the check passes
+ *   !macro <name or UUID>
+ *   !portrait <actor | image | off>   framed portrait window beside the text box
+ *   !sound <file>   !cry [name | lead]
+ *   !roll <skill> <dc> [token | best | choose] -> pass | fail    a real PTR skill check
+ *   !chance <percent> -> hit | miss
+ *   !pay <amount> -> paid | broke     !earn <amount>
+ *   !take <item> [qty] -> ok | missing   !give <item or UUID> [qty]
+ *   !set [actor: | world:]<name> [value]   !add <name> <n>   !clear <name>
+ *   !ask-gm <question> -> yes | no
+ *   !enter / !done                 end in success     !stay   end without (default)
  *
- *   [ready]
- *   !if not item:rising-badge -> weak   jump when the check passes, else carry on
- *   !macro Boss Intro             run a macro (name or UUID)
- *   !enter                        end: success (let the token in; counts for "once")
+ * "-> a | b": go to a on success, b on failure; either may be left out, and
+ * then the dialogue carries on with the next line.
  *
- *   [leave]
- *   You tremble away from the threshold… for now.
- *   !stay                         end: no success (keep the token out; the default)
+ * Checks: PTR predicate statements over the party (the token's actor, its
+ * trainer and the trainer's unboxed Pokémon): their roll options, item:<slug>,
+ * species:<slug>, self:level:N, trainer:level:N, skill:<skill>:N (rank names
+ * work: skill:athletics:adept+), party:size:N, user:gm, memory (flag:x,
+ * actor:x, world:x, with :value), and world state (combat:active,
+ * combat:round:N, scene:<slug>, time:day / time:night / time:hour:N,
+ * season:<slug>). "a, b" = and, "a | b" = or, "not a"; JSON predicates work.
  *
- *   -> node                       jump to another node
- *   // comment
+ * Memory: party flags live on the trainer actor, actor flags on the actor
+ * talking, world flags in a world setting (players' writes go through the GM's
+ * client, so a GM must be connected). All persist across scenes.
+ * Console: game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.memory
  *
- * !done is the same as !enter (reads better on tiles). A node's choices appear
- * with its last page. A node that ends with no choice, jump, !enter or !stay
- * ends without success.
- *
- * Checks use PTR predicate statements, tested against the roll options of the
- * whole party (the token's actor, its trainer, and the trainer's unboxed
- * Pokémon), plus: item:<slug> / <type>:<slug> for every owned item, species:<slug>,
- * self:level:N per Pokémon, trainer:level:N, party:size:N and user:gm.
- * "a, b" means a AND b, "a | b" means a OR b, "not a" negates; JSON predicates
- * ([…] / {…}) work too. e.g. item:rising-badge, self:level:40+, not condition:fainted
- *
- * "Ask again" (both): every time, once per token, or once per actor; "once"
- * counts after a dialogue ends in !enter / !done. Reset remembered ones with
- *   game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.reset()
- * Region dialogues skip GM moves unless "Ask the GM too" is on; pressing
- * Interact always works.
+ * "Ask again": every time, once per token, or once per actor; "once" counts
+ * after a dialogue ends in !enter / !done. Reset with api.dialogues.reset().
  */
 
 import { MODULE_ID, featureEnabled } from "./feature-toggles.js";
 
-import { DGA, afterModuleInit } from "./dylan-modules.js";
+import { DGA, POKEMON_ASSETS, afterModuleInit } from "./dylan-modules.js";
+import { openPortrait, playCry } from "./field-move-cry.js";
 
 export const TYPE = `${MODULE_ID}.dialogue`;
 const FEATURE = "dialogues";
 const FLAG = "dialogues"; // remembered "once" passes on tokens / actors
+const MEMORY = "memory"; // memory flags on actors
+const WORLD_MEMORY = "dialogueMemory"; // world setting
 const TILE_FLAG = "dialogue"; // flags[MODULE_ID].dialogue on tiles
-const MAX_STEPS = 200;
+const SOCKET = `module.${MODULE_ID}`;
+const MAX_STEPS = 500;
 
 export const DEFAULT_SCRIPT = `[start]
 You feel an ominous presence beyond this threshold...
@@ -79,6 +85,11 @@ Are you sure you are ready to proceed?
 You tremble away from the threshold... for now.
 !stay`;
 
+/** "Pokémon Education" -> "pokemon-education" (accents dropped, not turned into dashes). */
+const slugify = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const escapeHTML = (s) => foundry.utils?.escapeHTML?.(String(s ?? "")) ?? String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
 /* ------------------------------------------------------------------ *
  *  Script parsing
  * ------------------------------------------------------------------ */
@@ -88,11 +99,37 @@ const CHOICE_RE = /^>\s*(.+?)\s*(?:\[([^\]]+)\])?\s*->\s*(\S+)$/;
 const GOTO_RE = /^->\s*(\S+)$/;
 const IF_RE = /^!if\s+(.+?)\s*->\s*(\S+)$/i;
 const MACRO_RE = /^!macro\s+(.+)$/i;
+const SPEAKER_RE = /^@([^:]*?)\s*(?::\s*(.*))?$/;
+const COMMAND_RE = /^!([a-z][a-z-]*)\b\s*(.*?)\s*(?:->\s*([^|\s]*)\s*(?:\|\s*(\S+))?)?$/i;
+
+/** name -> argument check (returns an error message or null). */
+const COMMANDS = {
+  portrait: (a) => (a.length ? null : "needs an actor, an image or off"),
+  sound: (a) => (a.length ? null : "needs a sound file"),
+  cry: () => null,
+  roll: (a) => (a.length >= 2 && Number.isFinite(Number(a[1])) && (!a[2] || ["token", "best", "choose"].includes(a[2].toLowerCase())) ? null : "needs <skill> <dc> [token | best | choose]"),
+  chance: (a) => (a.length === 1 && Number.isFinite(Number(a[0])) ? null : "needs a percentage"),
+  pay: (a) => (a.length === 1 && Number(a[0]) >= 0 ? null : "needs an amount"),
+  earn: (a) => (a.length === 1 && Number(a[0]) >= 0 ? null : "needs an amount"),
+  take: (a) => (a.length ? null : "needs an item"),
+  give: (a) => (a.length ? null : "needs an item"),
+  set: (a) => (a.length ? null : "needs a flag name"),
+  add: (a) => (a.length === 2 && Number.isFinite(Number(a[1])) ? null : "needs <flag> <number>"),
+  clear: (a) => (a.length === 1 ? null : "needs a flag name"),
+  "ask-gm": () => null,
+};
+
+/** Split command arguments on spaces, keeping "quoted text" together. */
+function splitArgs(text) {
+  const out = [];
+  for (const m of String(text ?? "").matchAll(/"([^"]*)"|(\S+)/g)) out.push(m[1] ?? m[2]);
+  return out;
+}
 
 /**
  * Script text -> { start, nodes: { label: { steps, choices } }, errors }.
- * Steps: {type: "page", lines} | {type: "goto", target} | {type: "if", predicate, target}
- *        | {type: "macro", ref} | {type: "enter"} | {type: "stay"}
+ * Steps: page {lines} | speaker {name} | goto {target} | if {predicate, target}
+ *        | macro {ref} | cmd {name, args, rest, onTrue, onFalse} | enter | stay
  */
 export function parseScript(text) {
   const nodes = {};
@@ -113,6 +150,15 @@ export function parseScript(text) {
     page = null;
     node.steps.push(s);
   };
+  const addText = (line) => {
+    if (!node) open("start");
+    if (node.choices.length) return errors.push(`[${node.label}]: text after a choice ("${line}").`);
+    if (!page) {
+      page = { type: "page", lines: [] };
+      node.steps.push(page);
+    }
+    page.lines.push(line);
+  };
 
   String(text ?? "").split(/\r?\n/).forEach((rawLine, i) => {
     const line = rawLine.trim();
@@ -132,26 +178,35 @@ export function parseScript(text) {
       return;
     }
     if ((m = line.match(GOTO_RE))) return step({ type: "goto", target: m[1], raw: line });
+    if (line.startsWith("@")) {
+      m = line.match(SPEAKER_RE);
+      step({ type: "speaker", name: m[1].trim(), raw: line });
+      if (m[2]) addText(m[2]);
+      return;
+    }
     if (line.startsWith("!")) {
       if ((m = line.match(IF_RE))) return step({ type: "if", predicate: m[1], target: m[2], raw: line });
       if ((m = line.match(MACRO_RE))) return step({ type: "macro", ref: m[1].trim(), raw: line });
       const cmd = line.toLowerCase();
       if (cmd === "!enter" || cmd === "!done") return step({ type: "enter", raw: line });
       if (cmd === "!stay" || cmd === "!leave" || cmd === "!end") return step({ type: "stay", raw: line });
+      if ((m = line.match(COMMAND_RE)) && COMMANDS[m[1].toLowerCase()]) {
+        const name = m[1].toLowerCase();
+        const args = splitArgs(m[2]);
+        const problem = COMMANDS[name](args);
+        if (problem) return errors.push(`${where}: !${name} ${problem}.`);
+        return step({ type: "cmd", name, args, rest: m[2], onTrue: m[3] || null, onFalse: m[4] || null, raw: line });
+      }
       return errors.push(`${where}: unknown command "${line}".`);
     }
-    // Text
-    if (!node) open("start");
-    if (node.choices.length) return errors.push(`[${node.label}]: text after a choice ("${line}").`);
-    if (!page) {
-      page = { type: "page", lines: [] };
-      node.steps.push(page);
-    }
-    page.lines.push(line);
+    addText(line);
   });
 
   for (const n of Object.values(nodes)) {
-    const targets = [...n.steps.map((s) => s.target).filter(Boolean), ...n.choices.map((c) => c.target)];
+    const targets = [
+      ...n.steps.flatMap((s) => [s.target, s.onTrue, s.onFalse]).filter(Boolean),
+      ...n.choices.map((c) => c.target),
+    ];
     for (const t of targets) if (!nodes[t]) errors.push(`[${n.label}] points to [${t}], which doesn't exist.`);
   }
   if (nodes.start) start = "start";
@@ -164,26 +219,32 @@ export function parseScript(text) {
 
 /**
  * Walk the dialogue. `io` supplies the side effects (so it can be tested):
- *   page(lines), choose(lines, choices) -> index|null, check(predicate) -> bool, macro(ref, node)
+ *   page(lines, speaker), choose(lines, choices, speaker) -> index|null,
+ *   check(predicate) -> bool, macro(ref, node), command(step, node) -> bool
  * Resolves to "enter" or "stay".
  */
 export async function runScript(script, io) {
   let label = script.start;
   let steps = 0;
+  let speaker = null;
   while (label) {
     const node = script.nodes[label];
     if (!node) return "stay";
     let pending = null; // the last page, held back so choices can be shown with it
     const flush = async () => {
-      if (pending) await io.page(pending);
+      if (pending) await io.page(pending.lines, pending.speaker);
       pending = null;
     };
     let next = null;
     for (const s of node.steps) {
-      if (++steps > MAX_STEPS) throw new Error("The dialogue looped more than 200 steps.");
+      if (++steps > MAX_STEPS) throw new Error(`The dialogue ran more than ${MAX_STEPS} steps; is it looping?`);
       if (s.type === "page") {
         await flush();
-        pending = s.lines;
+        pending = { lines: s.lines, speaker };
+        continue;
+      }
+      if (s.type === "speaker") {
+        speaker = s.name || null;
         continue;
       }
       if (s.type === "if") {
@@ -198,7 +259,14 @@ export async function runScript(script, io) {
         break;
       }
       if (s.type === "macro") await io.macro(s.ref, label);
-      else if (s.type === "enter") return "enter";
+      else if (s.type === "cmd") {
+        const ok = !!(await io.command(s, label));
+        const target = ok ? s.onTrue : s.onFalse;
+        if (target) {
+          next = target;
+          break;
+        }
+      } else if (s.type === "enter") return "enter";
       else if (s.type === "stay") return "stay";
     }
     if (next) {
@@ -211,7 +279,7 @@ export async function runScript(script, io) {
       await flush();
       return "stay";
     }
-    const picked = await io.choose(pending ?? [], choices);
+    const picked = await io.choose(pending?.lines ?? [], choices, pending?.speaker ?? speaker);
     if (picked == null || !choices[picked]) return "stay";
     label = choices[picked].target;
   }
@@ -219,24 +287,129 @@ export async function runScript(script, io) {
 }
 
 /* ------------------------------------------------------------------ *
- *  Prerequisite checks
+ *  Text: styles, placeholders, speaker
  * ------------------------------------------------------------------ */
 
-/** "a, not b, c | d" -> PTR predicate array. JSON passes through. */
+const COLORS = {
+  red: "#d8342c", blue: "#2f6fdb", green: "#2a9a3f", yellow: "#c99a00", orange: "#e0731a", purple: "#8a4fd1",
+  pink: "#d9529b", gray: "#7a7a7a", grey: "#7a7a7a", white: "#ffffff", black: "#000000", gold: "#c29b1f",
+  teal: "#178f8f", brown: "#8b5a2b",
+};
+const STYLE_TAGS = { b: "strong", i: "em", u: "u" };
+const CLASS_TAGS = ["big", "small", "shake"];
+
+/** "{red}Hi {trainer}{/}" -> HTML. Unknown {…} stays as written. */
+export function renderMarkup(text, placeholder = () => undefined) {
+  const open = [];
+  let out = String(text).replace(/\{([^{}]*)\}/g, (whole, inner) => {
+    const tag = inner.trim();
+    const low = tag.toLowerCase();
+    if (low === "/") {
+      const t = open.pop();
+      return t ? `</${t}>` : "";
+    }
+    if (COLORS[low] || /^#[0-9a-f]{3,8}$/i.test(tag)) {
+      open.push("span");
+      return `<span style="color:${COLORS[low] ?? tag}">`;
+    }
+    if (STYLE_TAGS[low]) {
+      open.push(STYLE_TAGS[low]);
+      return `<${STYLE_TAGS[low]}>`;
+    }
+    if (CLASS_TAGS.includes(low)) {
+      open.push("span");
+      return `<span class="ptre1-dlg-${low}">`;
+    }
+    const value = placeholder(tag);
+    return value === undefined || value === null ? whole : escapeHTML(value);
+  });
+  while (open.length) out += `</${open.pop()}>`;
+  return out;
+}
+
+async function toHTML(lines, speaker, placeholder) {
+  const name = speaker ? `<span class="ptre1-dlg-speaker">${renderMarkup(speaker, placeholder)}:</span> ` : "";
+  const html = `<p>${name}${renderMarkup(lines.join("<br>"), placeholder)}</p>`;
+  const TextEditor = foundry.applications?.ux?.TextEditor?.implementation;
+  return TextEditor ? TextEditor.enrichHTML(html) : html;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Text box
+ * ------------------------------------------------------------------ */
+
+function dga() {
+  return game.modules.get(DGA)?.active ? game.modules.get(DGA).api : null;
+}
+
+/** DGA's interaction blip before every text box, as its field moves do. */
+async function blip() {
+  const interact = dga()?.scripts?.Interact;
+  if (typeof interact !== "function") return;
+  try {
+    await interact();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Dialogue: interaction sound failed`, err);
+  }
+}
+
+async function showPage(title, html) {
+  await blip();
+  const prompt = dga()?.scripts?.FooterDialogPrompt;
+  if (prompt) return prompt({ title, content: html });
+  return foundry.applications.api.DialogV2.prompt({ window: { title }, content: html, rejectClose: false });
+}
+
+/** Buttons with labels; resolves to the index picked, or null when closed. */
+async function showButtons(title, html, labels) {
+  const footer = dga()?.FooterDialog;
+  const Dialog = footer ?? foundry.applications.api.DialogV2;
+  await blip();
+  const result = await Dialog.wait({
+    window: { title },
+    content: footer ? `<div class="dialog-content">${html}</div>` : html,
+    buttons: labels.map((label, i) => ({ action: `choice${i}`, label, default: i === 0 })),
+    rejectClose: false,
+  });
+  const index = /^choice(\d+)$/.exec(result ?? "")?.[1];
+  return index === undefined ? null : Number(index);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Party and checks
+ * ------------------------------------------------------------------ */
+
+/** "a, not b, c | d" -> PTR predicate array. JSON passes through. Rank names become numbers. */
 export function parsePredicate(text) {
   const src = String(text ?? "").trim();
   if (!src) return [];
+  let predicate;
   if (src.startsWith("[") || src.startsWith("{")) {
     const parsed = JSON.parse(src);
-    return Array.isArray(parsed) ? parsed : [parsed];
+    predicate = Array.isArray(parsed) ? parsed : [parsed];
+  } else {
+    predicate = src.split(",").map((t) => t.trim()).filter(Boolean).map((term) => {
+      const neg = /^not\s+(.+)$/i.exec(term);
+      const body = neg ? neg[1].trim() : term;
+      const alts = body.split("|").map((a) => a.trim()).filter(Boolean);
+      const stmt = alts.length > 1 ? { or: alts } : alts[0];
+      return neg ? { not: stmt } : stmt;
+    });
   }
-  return src.split(",").map((t) => t.trim()).filter(Boolean).map((term) => {
-    const neg = /^not\s+(.+)$/i.exec(term);
-    const body = neg ? neg[1].trim() : term;
-    const alts = body.split("|").map((a) => a.trim()).filter(Boolean);
-    const stmt = alts.length > 1 ? { or: alts } : alts[0];
-    return neg ? { not: stmt } : stmt;
-  });
+  return predicate.map(normalizeStatement);
+}
+
+/** Skill ranks, as PTR's prerequisite checker numbers them. */
+export const RANKS = { pathetic: 1, untrained: 2, novice: 3, adept: 4, expert: 5, master: 6, virtuoso: 8 };
+
+function normalizeStatement(s) {
+  if (typeof s === "string") {
+    const m = /^(skill:[^:]+:)([a-z]+)([+-]?)$/i.exec(s);
+    return m && RANKS[m[2].toLowerCase()] ? `${m[1].toLowerCase()}${RANKS[m[2].toLowerCase()]}${m[3]}` : s;
+  }
+  if (Array.isArray(s)) return s.map(normalizeStatement);
+  if (s && typeof s === "object") return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, normalizeStatement(v)]));
+  return s;
 }
 
 /** Simple evaluator, used when PTR's PTUPredicate isn't available. */
@@ -272,7 +445,7 @@ async function loadPredicateEngine() {
   }
 }
 
-const slugOf = (doc) => doc?.slug ?? doc?.system?.slug ?? String(doc?.name ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const slugOf = (doc) => doc?.slug ?? doc?.system?.slug ?? slugify(doc?.name);
 
 /** The token's actor, its trainer, and the trainer's unboxed party. */
 export function partyOf(tokenDoc) {
@@ -286,7 +459,29 @@ export function partyOf(tokenDoc) {
   return [...new Set([actor, trainer, ...pokemon].filter(Boolean))];
 }
 
-/** Every roll option the party has, plus item/species/level/party options. */
+const trainerOf = (members, tokenDoc) => members.find((a) => a.type !== "pokemon") ?? tokenDoc?.actor ?? null;
+const leadOf = (members, tokenDoc) => (tokenDoc?.actor?.type === "pokemon" ? tokenDoc.actor : members.find((a) => a.type === "pokemon")) ?? null;
+
+/** PTR skill keys -> ids usable in checks and !roll (key and label slug). */
+function skillIds(key) {
+  const label = game.i18n?.format?.(`SKILL.${key}`);
+  return [...new Set([key.toLowerCase(), slugify(label && label !== `SKILL.${key}` ? label : key)])];
+}
+
+/** "athletics" / "Pokémon Education" / "pokemonEd" -> PTR skill key, or null. */
+export function skillKey(text) {
+  const keys = CONFIG.PTU?.data?.skills?.keys ?? [];
+  const want = slugify(text);
+  return keys.find((k) => skillIds(k).some((id) => slugify(id) === want)) ?? null;
+}
+
+const skillRank = (actor, key) => {
+  const sk = actor?.system?.skills?.[key];
+  const n = sk?.value?.total ?? sk?.value?.value;
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Every roll option the party has, plus item/species/level/skill/party options. */
 export function partyOptions(members) {
   const options = new Set();
   let size = 0;
@@ -297,6 +492,10 @@ export function partyOptions(members) {
       if (!slug) continue;
       options.add(`item:${slug}`);
       options.add(`${item.type}:${slug}`);
+    }
+    for (const key of Object.keys(a.system?.skills ?? {})) {
+      const n = skillRank(a, key);
+      if (n !== null) for (const id of skillIds(key)) options.add(`skill:${id}:${n}`);
     }
     const level = a.system?.level?.current;
     if (a.type === "pokemon") {
@@ -313,53 +512,384 @@ export function partyOptions(members) {
   return options;
 }
 
-function makeChecker(members) {
-  const options = partyOptions(members);
-  return (text) => {
-    try {
-      const predicate = parsePredicate(text);
-      return PTUPredicate ? PTUPredicate.test(predicate, options) : testPredicate(predicate, options);
-    } catch (err) {
-      console.error(`${MODULE_ID} | Dialogue: can't read the check "${text}"`, err);
-      if (game.user.isGM) ui.notifications.warn(`Dialogue: can't read the check "${text}".`);
-      return false;
-    }
-  };
+/** combat:active, combat:round:N, scene:<slug>, time:day|night, time:hour:N, season:<slug>. */
+export function worldOptions() {
+  const options = new Set();
+  const combat = game.combat;
+  if (combat?.started) {
+    options.add("combat:active");
+    options.add(`combat:round:${combat.round}`);
+  }
+  const scene = globalThis.canvas?.scene ?? game.scenes?.viewed;
+  if (scene?.name) options.add(`scene:${slugify(scene.name)}`);
+  let hour = null;
+  try {
+    const sc = globalThis.SimpleCalendar?.api;
+    hour = sc?.currentDateTime?.()?.hour ?? game.time?.components?.hour ?? null;
+    const season = sc?.getCurrentSeason?.()?.name;
+    if (season) options.add(`season:${slugify(season)}`);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Dialogue: couldn't read the time`, err);
+  }
+  if (Number.isFinite(hour)) {
+    options.add(`time:hour:${hour}`);
+    options.add(hour >= 6 && hour < 18 ? "time:day" : "time:night");
+  }
+  return options;
 }
 
 /* ------------------------------------------------------------------ *
- *  Text box
+ *  Memory flags
  * ------------------------------------------------------------------ */
 
-async function toHTML(lines) {
-  const html = `<p>${lines.join("<br>")}</p>`;
-  const TextEditor = foundry.applications?.ux?.TextEditor?.implementation;
-  return TextEditor ? TextEditor.enrichHTML(html) : html;
+/** "world:bridge-repaired" -> { scope: "world", name: "bridge-repaired" }. Default scope "party". */
+export function memoryRef(text) {
+  const m = /^(party|actor|world|flag):(.+)$/i.exec(String(text).trim());
+  const scope = m ? m[1].toLowerCase() : "party";
+  return { scope: scope === "flag" ? "party" : scope, name: slugify(m ? m[2] : text) };
 }
 
-function dga() {
-  return game.modules.get(DGA)?.active ? game.modules.get(DGA).api : null;
+/** true / number / slug string. */
+export function memoryValue(text) {
+  if (text === undefined || text === null || text === "") return true;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : slugify(text);
 }
 
-async function showPage(title, lines) {
-  const content = await toHTML(lines);
-  const prompt = dga()?.scripts?.FooterDialogPrompt;
-  if (prompt) return prompt({ title, content });
-  return foundry.applications.api.DialogV2.prompt({ window: { title }, content, rejectClose: false });
+/** Pending world writes, shown locally until the setting update arrives. */
+const worldOverrides = new Map();
+
+function worldMemory() {
+  let stored = {};
+  try {
+    stored = game.settings.get(MODULE_ID, WORLD_MEMORY) ?? {};
+  } catch {
+    /* not registered */
+  }
+  const merged = { ...stored };
+  for (const [k, v] of worldOverrides) {
+    if (v === null) delete merged[k];
+    else merged[k] = v;
+  }
+  return merged;
 }
 
-async function showChoices(title, lines, choices) {
-  const footer = dga()?.FooterDialog;
-  const Dialog = footer ?? foundry.applications.api.DialogV2;
-  const text = lines.length ? await toHTML(lines) : "";
-  const result = await Dialog.wait({
-    window: { title },
-    content: footer ? `<div class="dialog-content">${text}</div>` : text,
-    buttons: choices.map((c, i) => ({ action: `choice${i}`, label: c.label, default: i === 0 })),
+function memoryHolder(scope, ctx) {
+  if (scope === "actor") return ctx.tokenDoc?.actor ?? null;
+  if (scope === "party") return trainerOf(ctx.members, ctx.tokenDoc);
+  return null;
+}
+
+function readMemory(scope, name, ctx) {
+  if (scope === "world") return worldMemory()[name];
+  return memoryHolder(scope, ctx)?.flags?.[MODULE_ID]?.[MEMORY]?.[name];
+}
+
+/** flag:x / actor:x / world:x options, plus :value when not just true. */
+export function memoryOptions(ctx) {
+  const options = new Set();
+  const add = (prefix, store) => {
+    for (const [k, v] of Object.entries(store ?? {})) {
+      if (v === undefined || v === null || v === false) continue;
+      options.add(`${prefix}:${k}`);
+      if (v !== true) options.add(`${prefix}:${k}:${v}`);
+    }
+  };
+  add("flag", memoryHolder("party", ctx)?.flags?.[MODULE_ID]?.[MEMORY]);
+  add("actor", memoryHolder("actor", ctx)?.flags?.[MODULE_ID]?.[MEMORY]);
+  add("world", worldMemory());
+  return options;
+}
+
+/** Write (value) or delete (null) a memory flag. Returns true on success. */
+async function writeMemory(scope, name, value, ctx) {
+  if (scope === "world") {
+    if (game.user.isGM) return setWorldMemory(name, value);
+    const reply = await askGMClient({ type: "memory", name, value }, 10_000);
+    if (!reply?.ok) {
+      ui.notifications.warn("Dialogue: no GM is connected, so the world flag wasn't saved.");
+      return false;
+    }
+    worldOverrides.set(name, value);
+    return true;
+  }
+  const holder = memoryHolder(scope, ctx);
+  if (!holder) return false;
+  if (!holder.isOwner) {
+    console.warn(`${MODULE_ID} | Dialogue: you don't own ${holder.name}; flag "${name}" not saved.`);
+    return false;
+  }
+  if (value === null) await holder.unsetFlag(MODULE_ID, `${MEMORY}.${name}`);
+  else await holder.setFlag(MODULE_ID, `${MEMORY}.${name}`, value);
+  return true;
+}
+
+async function setWorldMemory(name, value) {
+  const stored = { ...(game.settings.get(MODULE_ID, WORLD_MEMORY) ?? {}) };
+  if (value === null) delete stored[name];
+  else stored[name] = value;
+  await game.settings.set(MODULE_ID, WORLD_MEMORY, stored);
+  return true;
+}
+
+/* ------------------------------------------------------------------ *
+ *  GM messages (world flags, !ask-gm)
+ * ------------------------------------------------------------------ */
+
+const pendingReplies = new Map();
+
+/** Send a request to the active GM's client and wait for its reply (null on timeout / no GM). */
+function askGMClient(payload, timeout) {
+  if (!game.users?.activeGM) return Promise.resolve(null);
+  const id = foundry.utils.randomID();
+  return new Promise((resolve) => {
+    const timer = timeout ? setTimeout(() => {
+      pendingReplies.delete(id);
+      resolve(null);
+    }, timeout) : null;
+    pendingReplies.set(id, (reply) => {
+      if (timer) clearTimeout(timer);
+      resolve(reply);
+    });
+    game.socket.emit(SOCKET, { ...payload, id, from: game.user.id });
+  });
+}
+
+async function onSocket(msg) {
+  if (!msg?.type) return;
+  if (msg.type === "reply") {
+    if (msg.to !== game.user.id) return;
+    pendingReplies.get(msg.id)?.(msg);
+    pendingReplies.delete(msg.id);
+    return;
+  }
+  if (!game.users.activeGM?.isSelf) return;
+  const reply = (data) => game.socket.emit(SOCKET, { type: "reply", id: msg.id, to: msg.from, ...data });
+  try {
+    if (msg.type === "memory") {
+      await setWorldMemory(slugify(msg.name), msg.value ?? null);
+      reply({ ok: true });
+    } else if (msg.type === "ask") {
+      reply({ ok: true, answer: await gmConfirm(msg) });
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | Dialogue: GM request failed`, err);
+    reply({ ok: false });
+  }
+}
+
+/** The GM's yes/no window for !ask-gm. */
+async function gmConfirm({ from, question, speaker }) {
+  const user = game.users.get(from)?.name ?? "A player";
+  const who = speaker ? ` (${escapeHTML(speaker)})` : "";
+  const content = `<p><strong>${escapeHTML(user)}</strong>${who} asks:</p><p>${escapeHTML(question || "May they continue?")}</p>`;
+  const answer = await foundry.applications.api.DialogV2.confirm({
+    window: { title: "Dialogue: GM approval", icon: "fa-solid fa-comments" },
+    content,
     rejectClose: false,
   });
-  const index = /^choice(\d+)$/.exec(result ?? "")?.[1];
-  return index === undefined ? null : Number(index);
+  return answer === true;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Commands
+ * ------------------------------------------------------------------ */
+
+function resolveActor(text, ctx) {
+  const name = String(text ?? "").trim();
+  const low = name.toLowerCase();
+  if (!name || low === "actor" || low === "self") return ctx.tokenDoc?.actor ?? null;
+  if (low === "lead" || low === "pokemon") return leadOf(ctx.members, ctx.tokenDoc);
+  if (low === "trainer") return trainerOf(ctx.members, ctx.tokenDoc);
+  return ctx.members.find((a) => a.name?.toLowerCase() === low) ?? game.actors.getName?.(name) ?? null;
+}
+
+async function resolveActorRef(text, ctx) {
+  if (/^(Actor|Compendium|Scene)\./.test(text)) {
+    const doc = await fromUuid(text);
+    return doc?.documentName === "Token" ? doc.actor : doc;
+  }
+  return resolveActor(text, ctx);
+}
+
+const IMAGE_RE = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
+const playSound = (src, volume) => {
+  if (typeof globalThis.Sequence === "function") {
+    return new Sequence({ moduleName: MODULE_ID, softFail: true }).sound().file(src).locally(true).volume(volume).play();
+  }
+  return foundry.audio.AudioHelper.play({ src, volume, autoplay: true, loop: false }, false);
+};
+
+async function cmdPortrait(args, ctx) {
+  ctx.closePortrait?.();
+  ctx.closePortrait = null;
+  const ref = args.join(" ");
+  if (ref.toLowerCase() === "off") return true;
+  const subject = IMAGE_RE.test(ref) ? { img: ref, name: "" } : await resolveActorRef(ref, ctx);
+  if (!subject) return false;
+  ctx.closePortrait = openPortrait(subject);
+  return !!ctx.closePortrait;
+}
+
+async function cmdCry(args, ctx) {
+  const actor = await resolveActorRef(args.join(" "), ctx);
+  if (!actor || !game.modules.get(POKEMON_ASSETS)?.active) return false;
+  playCry(actor);
+  return true;
+}
+
+async function cmdRoll([skill, dc, who = "token"], ctx) {
+  const key = skillKey(skill);
+  if (!key) {
+    if (game.user.isGM) ui.notifications.warn(`Dialogue: no skill "${skill}".`);
+    return false;
+  }
+  const target = Number(dc);
+  const label = game.i18n.format(`SKILL.${key}`);
+  let actor = ctx.tokenDoc?.actor;
+  const able = ctx.members.filter((a) => skillRank(a, key) !== null);
+  if (who.toLowerCase() === "best") {
+    actor = able.reduce((best, a) => (skillRank(a, key) > (skillRank(best, key) ?? -1) ? a : best), able[0] ?? actor);
+  } else if (who.toLowerCase() === "choose" && able.length > 1) {
+    const html = await toHTML([`Who will make the ${label} check?`], null, ctx.placeholder);
+    const index = await showButtons(ctx.title, html, able.map((a) => a.name));
+    if (index === null) return false;
+    actor = able[index];
+  }
+  if (!actor) return false;
+
+  let total = null;
+  const statistic = actor.attributes?.skills?.[key];
+  if (typeof statistic?.roll !== "function" && skillRank(actor, key) === null) return false; // no such skill
+  if (typeof statistic?.roll === "function") {
+    const token = actor === ctx.tokenDoc?.actor ? ctx.tokenDoc.object : null;
+    const result = await statistic.roll({ skipDialog: true, token, overrideLabel: `${label} Check (DC ${target})` });
+    total = result?.rolls?.[0]?.total ?? null;
+  } else {
+    // Not a PTR actor: roll rank d6 and post it.
+    const rank = Math.max(1, skillRank(actor, key) ?? 1);
+    const roll = await new Roll(`${rank}d6`).evaluate();
+    await roll.toMessage({ speaker: ChatMessage.getSpeaker({ actor }), flavor: `${label} Check (DC ${target})` });
+    total = roll.total;
+  }
+  return total !== null && total >= target;
+}
+
+/** Owned items in the party matching a slug, name or UUID, trainer first. */
+function findItems(ref, ctx) {
+  const want = slugify(ref);
+  const owners = [trainerOf(ctx.members, ctx.tokenDoc), ...ctx.members].filter((a, i, all) => a && all.indexOf(a) === i);
+  return owners.flatMap((a) => [...(a.items ?? [])]
+    .filter((i) => i.uuid === ref || i._stats?.compendiumSource === ref || i.flags?.core?.sourceId === ref
+      || slugOf(i) === want || slugify(i.name) === want));
+}
+
+const quantityOf = (item) => Math.max(0, Number(item.system?.quantity ?? 1) || 0);
+
+async function cmdTake(args, ctx) {
+  const qtyArg = args.length > 1 && /^\d+$/.test(args.at(-1)) ? Number(args.pop()) : 1;
+  const ref = args.join(" ").replace(/^item:/i, "");
+  const items = findItems(ref, ctx).sort((a, b) => quantityOf(a) - quantityOf(b));
+  if (items.reduce((n, i) => n + quantityOf(i), 0) < qtyArg) return false;
+  if (items.some((i) => !i.parent?.isOwner)) return false;
+  let left = qtyArg;
+  for (const item of items) {
+    if (left <= 0) break;
+    const q = quantityOf(item);
+    const use = Math.min(q, left);
+    left -= use;
+    if (q - use > 0) await item.update({ "system.quantity": q - use });
+    else await item.delete();
+  }
+  return true;
+}
+
+async function itemSource(ref) {
+  if (/^(Item|Compendium|Actor)\./.test(ref)) return fromUuid(ref);
+  const byName = game.items.getName?.(ref) ?? game.items.find?.((i) => slugify(i.name) === slugify(ref));
+  if (byName) return byName;
+  for (const pack of game.packs.filter((p) => p.documentName === "Item")) {
+    const entry = pack.index.find((e) => slugify(e.name) === slugify(ref));
+    if (entry) return pack.getDocument(entry._id);
+  }
+  return null;
+}
+
+async function cmdGive(args, ctx) {
+  const qty = args.length > 1 && /^\d+$/.test(args.at(-1)) ? Number(args.pop()) : 1;
+  const ref = args.join(" ");
+  const trainer = trainerOf(ctx.members, ctx.tokenDoc);
+  if (!trainer?.isOwner) return false;
+  const source = await itemSource(ref);
+  if (!source) {
+    if (game.user.isGM) ui.notifications.warn(`Dialogue: no item "${ref}".`);
+    return false;
+  }
+  const existing = [...trainer.items].find((i) => slugify(i.name) === slugify(source.name) && i.type === source.type);
+  if (existing && existing.system?.quantity !== undefined) {
+    await existing.update({ "system.quantity": quantityOf(existing) + qty });
+    return true;
+  }
+  const data = source.toObject();
+  delete data._id;
+  if (data.system && "quantity" in data.system) data.system.quantity = qty;
+  await trainer.createEmbeddedDocuments("Item", [data]);
+  return true;
+}
+
+async function cmdMoney(amount, ctx) {
+  const trainer = trainerOf(ctx.members, ctx.tokenDoc);
+  if (!trainer?.isOwner) return false;
+  const money = Number(trainer.system?.money ?? 0);
+  if (money + amount < 0) return false;
+  await trainer.update({ "system.money": money + amount });
+  return true;
+}
+
+async function cmdAskGM(rest, ctx) {
+  const question = String(rest ?? "").replace(/^"|"$/g, "").trim();
+  if (game.user.isGM) return gmConfirm({ from: game.user.id, question, speaker: ctx.tokenDoc?.actor?.name });
+  if (!game.users.activeGM) {
+    ui.notifications.warn("Dialogue: no GM is connected to answer.");
+    return false;
+  }
+  ui.notifications.info("Waiting for the GM to answer…");
+  const reply = await askGMClient({ type: "ask", question, speaker: ctx.tokenDoc?.actor?.name }, 300_000);
+  return !!reply?.answer;
+}
+
+async function runCommand(step, ctx) {
+  const args = [...step.args];
+  switch (step.name) {
+    case "portrait": return cmdPortrait(args, ctx);
+    case "sound": {
+      const volume = dga()?.VolumeSettings?.getVolume?.("interact") ?? 0.8;
+      playSound(args.join(" "), volume);
+      return true;
+    }
+    case "cry": return cmdCry(args, ctx);
+    case "roll": return cmdRoll(args, ctx);
+    case "chance": return Math.random() * 100 < Number(args[0]);
+    case "pay": return cmdMoney(-Number(args[0]), ctx);
+    case "earn": return cmdMoney(Number(args[0]), ctx);
+    case "take": return cmdTake(args, ctx);
+    case "give": return cmdGive(args, ctx);
+    case "set": {
+      const { scope, name } = memoryRef(args[0]);
+      return writeMemory(scope, name, memoryValue(args.slice(1).join(" ")), ctx);
+    }
+    case "add": {
+      const { scope, name } = memoryRef(args[0]);
+      const current = Number(readMemory(scope, name, ctx));
+      return writeMemory(scope, name, (Number.isFinite(current) ? current : 0) + Number(args[1]), ctx);
+    }
+    case "clear": {
+      const { scope, name } = memoryRef(args[0]);
+      return writeMemory(scope, name, null, ctx);
+    }
+    case "ask-gm": return cmdAskGM(step.rest, ctx);
+  }
+  return false;
 }
 
 /* ------------------------------------------------------------------ *
@@ -384,9 +914,6 @@ async function runMacro(ref, scope) {
  *  Sources: a region behavior or a tile, with one config shape
  * ------------------------------------------------------------------ */
 
-/**
- * { id, kind, name, region?, behavior?, tile?, cfg: { script, title, trigger, block, repeat, askGM } }
- */
 function regionSource(region, behavior) {
   return { id: behavior.id, kind: "region", name: behavior.name || region.name, region, behavior, cfg: behavior.system ?? {} };
 }
@@ -425,7 +952,7 @@ async function rememberPass(tokenDoc, source) {
   }
 }
 
-/** GM: forget remembered passes (all, or for one behavior / tile id) on every actor and token. */
+/** GM: forget remembered "once" passes (all, or for one behavior / tile id). */
 async function reset(id = null) {
   if (!game.user.isGM) return 0;
   let count = 0;
@@ -447,11 +974,85 @@ async function reset(id = null) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  GM memory tools (console)
+ * ------------------------------------------------------------------ */
+
+function actorArg(actor) {
+  if (!actor) return null;
+  if (typeof actor === "string") return game.actors.get(actor) ?? game.actors.getName(actor) ?? null;
+  return actor.actor ?? actor;
+}
+
+/** The trainer whose party flags an actor uses. */
+function partyHolderOf(actor) {
+  if (!actor) return null;
+  if (actor.type !== "pokemon") return actor;
+  return game.actors.get(actor.flags?.ptu?.party?.trainer) ?? actor;
+}
+
+const memoryTools = {
+  /** All world flags, and party / actor flags of `actor` (name, id or document). */
+  list(actor = null) {
+    const a = actorArg(actor);
+    const out = { world: worldMemory() };
+    if (a) {
+      const trainer = partyHolderOf(a);
+      out.party = { holder: trainer?.name, ...(trainer?.flags?.[MODULE_ID]?.[MEMORY] ?? {}) };
+      out.actor = { holder: a.name, ...(a.flags?.[MODULE_ID]?.[MEMORY] ?? {}) };
+    }
+    console.log(`${MODULE_ID} | Dialogue memory`, out);
+    return out;
+  },
+  /** set("world:bridge-repaired"), set("talked-to-elder", true, "Red"), set("actor:petted", 2, "Growlithe") */
+  async set(ref, value = true, actor = null) {
+    if (!game.user.isGM) return false;
+    const { scope, name } = memoryRef(ref);
+    if (scope === "world") return setWorldMemory(name, value);
+    const a = actorArg(actor);
+    const holder = scope === "party" ? partyHolderOf(a) : a;
+    if (!holder) throw new Error("Pass the actor (name, id or document) for party / actor flags.");
+    if (value === null) await holder.unsetFlag(MODULE_ID, `${MEMORY}.${name}`);
+    else await holder.setFlag(MODULE_ID, `${MEMORY}.${name}`, value);
+    return true;
+  },
+  clear(ref, actor = null) {
+    return memoryTools.set(ref, null, actor);
+  },
+  /** Wipe all memory: "world", or every party / actor flag on every actor ("actors"), or both ("all"). */
+  async wipe(what = "all") {
+    if (!game.user.isGM) return false;
+    if (what === "world" || what === "all") await game.settings.set(MODULE_ID, WORLD_MEMORY, {});
+    if (what === "actors" || what === "all") {
+      for (const a of game.actors) if (a.flags?.[MODULE_ID]?.[MEMORY]) await a.unsetFlag(MODULE_ID, MEMORY);
+    }
+    ui.notifications.info(`Dialogue: memory wiped (${what}).`);
+    return true;
+  },
+};
+
+/* ------------------------------------------------------------------ *
  *  Conversation
  * ------------------------------------------------------------------ */
 
 /** Tokens with a dialogue open. */
 const busy = new Set();
+
+function placeholderFor(ctx) {
+  return (tag) => {
+    const low = tag.toLowerCase();
+    if (low === "trainer") return trainerOf(ctx.members, ctx.tokenDoc)?.name;
+    if (low === "pokemon" || low === "lead") return leadOf(ctx.members, ctx.tokenDoc)?.name;
+    if (low === "actor") return ctx.tokenDoc?.actor?.name;
+    if (low === "user") return game.user?.name;
+    const m = /^(flag|party|actor|world):(.+)$/i.exec(tag);
+    if (m) {
+      const { scope, name } = memoryRef(tag);
+      const v = readMemory(scope, name, ctx);
+      return v === undefined || v === null ? "" : String(v);
+    }
+    return undefined;
+  };
+}
 
 /** Play the source's dialogue for this token: "enter" or "stay". */
 async function converse(tokenDoc, source) {
@@ -464,14 +1065,39 @@ async function converse(tokenDoc, source) {
 
   await loadPredicateEngine();
   const members = partyOf(tokenDoc);
-  const title = source.cfg.title || source.name;
+  const ctx = { tokenDoc, members, source, title: source.cfg.title || source.name, closePortrait: null };
+  ctx.placeholder = placeholderFor(ctx);
+  const check = (text) => {
+    try {
+      const options = new Set([...partyOptions(members), ...memoryOptions(ctx), ...worldOptions()]);
+      const predicate = parsePredicate(text);
+      return PTUPredicate ? PTUPredicate.test(predicate, options) : testPredicate(predicate, options);
+    } catch (err) {
+      console.error(`${MODULE_ID} | Dialogue: can't read the check "${text}"`, err);
+      if (game.user.isGM) ui.notifications.warn(`Dialogue: can't read the check "${text}".`);
+      return false;
+    }
+  };
   const scope = { actor: tokenDoc.actor, token: tokenDoc.object, region: source.region ?? null, behavior: source.behavior ?? null, tile: source.tile ?? null, party: members };
-  return runScript(script, {
-    page: (lines) => showPage(title, lines),
-    choose: (lines, choices) => showChoices(title, lines, choices),
-    check: makeChecker(members),
-    macro: (ref, node) => runMacro(ref, { ...scope, node }),
-  });
+  try {
+    return await runScript(script, {
+      page: async (lines, speaker) => showPage(ctx.title, await toHTML(lines, speaker, ctx.placeholder)),
+      choose: async (lines, choices, speaker) =>
+        showButtons(ctx.title, lines.length ? await toHTML(lines, speaker, ctx.placeholder) : "", choices.map((c) => renderMarkup(c.label, ctx.placeholder))),
+      check,
+      macro: (ref, node) => runMacro(ref, { ...scope, node }),
+      command: async (step, node) => {
+        try {
+          return await runCommand(step, ctx);
+        } catch (err) {
+          console.error(`${MODULE_ID} | Dialogue: "${step.raw}" failed in [${node}]`, err);
+          return false;
+        }
+      },
+    });
+  } finally {
+    ctx.closePortrait?.();
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -654,7 +1280,7 @@ async function onTileInteract(tile, tokenDoc) {
  *  Region behavior type
  * ------------------------------------------------------------------ */
 
-const SCRIPT_HINT = "[node] starts a node; text lines are pages (blank line or --- for a new page); \"> Label -> node\" adds a choice (\"> Label [check] -> node\" only if the check passes); \"-> node\" jumps; !if <check> -> node; !macro <name or UUID>; !enter (or !done) ends in success; !stay ends without (the default). Checks use PTR predicates over the party, e.g. item:rising-badge, self:level:40+, not condition:fainted.";
+const SCRIPT_HINT = "[node] starts a node; text lines are pages (blank line or --- for a new page); \"> Label -> node\" adds a choice (\"> Label [check] -> node\" only if the check passes); \"-> node\" jumps; !if <check> -> node. Text: {red}…{/}, {b}, {shake}, {trainer}, @Speaker. Commands: !macro, !portrait, !sound, !cry, !roll <skill> <dc> -> pass | fail, !chance, !pay, !earn, !take, !give, !set / !add / !clear flags, !ask-gm. !enter (or !done) ends in success; !stay ends without (the default). Full list in the module README.";
 const REPEAT_CHOICES = { always: "Every time", token: "Once per token", actor: "Once per actor" };
 
 function makeBehaviorType() {
@@ -683,7 +1309,7 @@ function makeBehaviorType() {
         title: new fields.StringField({
           initial: "",
           label: "Speaker",
-          hint: "Title of the text box. Defaults to this behavior's or the region's name.",
+          hint: "Title of the text box. Defaults to this behavior's or the region's name. To show a name in the text itself, start a line with @Name.",
         }),
         repeat: new fields.StringField({
           initial: "always",
@@ -704,8 +1330,6 @@ function makeBehaviorType() {
 /* ------------------------------------------------------------------ *
  *  Tile Config section
  * ------------------------------------------------------------------ */
-
-const escapeHTML = (s) => foundry.utils.escapeHTML?.(String(s ?? "")) ?? String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function onRenderTileConfig(app, html) {
   if (!featureEnabled(FEATURE)) return;
@@ -765,6 +1389,15 @@ const STYLE = `
   }
   details.ptre1-dialogue { border: 1px solid var(--color-border-light-2, rgba(128,128,128,.4)); border-radius: 4px; padding: 0.25rem 0.5rem; margin: 0.5rem 0; }
   details.ptre1-dialogue > summary { cursor: pointer; font-weight: bold; padding: 0.25rem 0; }
+  .ptre1-dlg-speaker { font-weight: bold; }
+  .ptre1-dlg-big { font-size: 1.35em; }
+  .ptre1-dlg-small { font-size: 0.75em; }
+  .ptre1-dlg-shake { display: inline-block; animation: ptre1-dlg-shake 0.25s linear infinite; }
+  @keyframes ptre1-dlg-shake {
+    0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-1px, 1px); }
+    50% { transform: translate(1px, -1px); } 75% { transform: translate(-1px, -1px); }
+  }
+  @media (prefers-reduced-motion: reduce) { .ptre1-dlg-shake { animation: none; } }
 `;
 
 Hooks.once("init", () => {
@@ -772,13 +1405,22 @@ Hooks.once("init", () => {
   CONFIG.RegionBehavior.typeLabels[TYPE] = `TYPES.RegionBehavior.${TYPE}`;
   CONFIG.RegionBehavior.typeIcons[TYPE] = "fa-solid fa-comments";
 
+  game.settings.register(MODULE_ID, WORLD_MEMORY, {
+    name: "Dialogue world memory",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
+    onChange: () => worldOverrides.clear(),
+  });
+
   const style = document.createElement("style");
   style.textContent = STYLE;
   document.head.append(style);
 
   const module = game.modules.get(MODULE_ID);
   module.api ??= {};
-  module.api.dialogues = { reset, parseScript, parsePredicate };
+  module.api.dialogues = { reset, memory: memoryTools, parseScript, parsePredicate };
 
   Hooks.on("preMoveToken", onPreMoveToken);
   Hooks.on("renderTileConfig", onRenderTileConfig);
@@ -789,4 +1431,8 @@ Hooks.once("init", () => {
     if (dga.api?.regionInteractions) dga.api.regionInteractions["ptre1-dialogue"] = { eligible, callback: onRegionInteract };
     if (dga.api?.tileInteractions) dga.api.tileInteractions["ptre1-dialogue"] = { eligible, callback: onTileInteract };
   });
+});
+
+Hooks.once("ready", () => {
+  game.socket?.on(SOCKET, onSocket);
 });

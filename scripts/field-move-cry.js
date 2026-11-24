@@ -136,7 +136,7 @@ export function spriteOf(actor) {
   return [actor?.img, actor?.species?.img].find(usableImage) ?? null;
 }
 
-function playCry(actor) {
+export function playCry(actor) {
   const src = game.modules.get(POKEMON_ASSETS)?.api?.logic?.ActorCry?.(actor);
   if (!src) return;
   const volume = game.modules.get(DGA)?.api?.VolumeSettings?.getVolume?.("cry") ?? 0.8;

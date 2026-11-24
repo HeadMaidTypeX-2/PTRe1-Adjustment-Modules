@@ -49,7 +49,7 @@ export const FEATURES = [
   {
     id: "dialogues", group: "Scenes & regions", live: true,
     title: "Dialogue trees (regions & tiles)",
-    description: "Dialogue scripts played in the text box, with pages, choices, prerequisite checks against the party (PTR predicates such as item:rising-badge or self:level:40+) and macros. On regions, as a Dialogue Region Behavior started by Interact (facing it and pressing Enter) or by walking in, optionally blocking entry until the dialogue lets the token in, like a boss-room threshold. On tiles, from a Dialogue section in Tile Config, started by Interact. Uses Dylan's footer text box when DGA is active. Turning this off stops all dialogues and blocking; the settings stay on the regions and tiles.",
+    description: "Dialogue scripts played in the text box, with pages, coloured and styled text, speakers and portraits, choices, checks against the party (PTR predicates such as item:rising-badge, self:level:40+ or skill:athletics:adept+), PTR skill rolls, random chances, money and item costs, memory flags that persist across scenes (party, actor or world), GM approval, sounds, cries and macros. On regions, as a Dialogue Region Behavior started by Interact (facing it and pressing Enter) or by walking in, optionally blocking entry until the dialogue lets the token in, like a boss-room threshold. On tiles, from a Dialogue section in Tile Config, started by Interact. Uses Dylan's footer text box when DGA is active. Turning this off stops all dialogues and blocking; the settings stay on the regions and tiles.",
   },
 
   // --- Integrations ---------------------------------------------------------

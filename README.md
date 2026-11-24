@@ -141,7 +141,9 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
 ### Scenes & regions
 
 - **`dialogue-trees.js`** — dialogue scripts played in the text box (DGA's footer box when DGA
-  is active, a Foundry dialog otherwise), on regions and tiles.
+  is active, a Foundry dialog otherwise), on regions and tiles. As with DGA's field moves, each
+  text box opens with DGA's interaction sound, following its *Interact* volume and its
+  interact-sound setting.
 
   **Regions:** add a **Dialogue** Region Behavior.
   - *Start with*: **Interact** (default; face the region and press DGA's Interact key, Enter,
@@ -196,18 +198,77 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   | `!enter` (or `!done`) / `!stay` | end in success (let the token in) / end without (keep it out); a node that just ends counts as `!stay` |
   | `// …` | comment |
 
-  Checks are PTR predicates tested against the whole party: the token's actor, its trainer,
-  and the trainer's unboxed Pokémon. Besides their roll options there are `item:<slug>` for
-  every owned item, `species:<slug>`, `self:level:N` for each Pokémon, `trainer:level:N`,
-  `party:size:N` and `user:gm`. Write `a, b` for both, `a | b` for either, `not a`, or a
-  JSON predicate. Examples: `item:rising-badge`, `self:level:40+`, `party:size:3+`.
+  **Text.** Inside any page or choice label:
+
+  | Markup | Result |
+  |---|---|
+  | `{red}…{/}` | colour: red, blue, green, yellow, orange, purple, pink, gray, white, black, gold, teal, brown, or `{#3cf}` / `{#e0b030}` |
+  | `{b}` `{i}` `{u}` `{big}` `{small}` `{shake}` | bold, italic, underline, larger, smaller, trembling; `{/}` closes the latest one (anything still open closes at the end of the page) |
+  | `{trainer}` `{pokemon}` `{lead}` `{actor}` `{user}` | the trainer, the token's Pokémon (or the party's first), the token's actor, the player |
+  | `{flag:x}` `{actor:x}` `{world:x}` | a memory flag's value |
+  | `@Name` / `@Name: text` / `@` | show "**Name:**" before the following pages / just this line onwards / stop |
+
+  **Commands.** Most take an optional `-> success | failure`: the dialogue jumps to the first
+  node on success, the second on failure, and carries on with the next line when that side is
+  left out (`-> | broke` only branches on failure).
+
+  | Command | Does | Succeeds when |
+  |---|---|---|
+  | `!portrait Pika` / `!portrait lead` / `!portrait pics/oak.webp` / `!portrait off` | the framed portrait window (as for field moves) beside the text box until changed, turned off, or the dialogue ends | it opened |
+  | `!sound sfx/door.ogg` | plays a sound for this player (DGA's Interact volume) | always |
+  | `!cry` / `!cry Pika` | plays a Pokémon's cry (Pokémon Assets); no name = the token's Pokémon | it played |
+  | `!roll athletics 15` | a real PTR skill check (chat card, modifiers, rule elements) against the DC; who rolls: `token` (default), `best` (highest rank in the party), `choose` (the player picks) | total ≥ DC |
+  | `!chance 30` | random, out of 100 | the roll is under 30 |
+  | `!pay 500` / `!earn 500` | takes / gives the trainer's money | there was enough |
+  | `!take "Old Key"` / `!take potion 2` | uses up owned items (by name, slug or UUID; deletes at 0) | the party had enough |
+  | `!give "Super Potion" 2` | gives the trainer an item (world item, compendium item by name, or UUID), stacking with one they have | it was found |
+  | `!set talked-to-elder` / `!set actor:petted 2` / `!set world:bridge-repaired` | stores a memory flag (true, a number, or a word) | it was saved |
+  | `!add badges-shown 1` / `!clear talked-to-elder` | adds to a number flag / removes a flag | it was saved |
+  | `!ask-gm "May they enter?"` | asks the GM; they get a Yes/No window | the GM said yes |
+
+  Names with spaces go in quotes. Rolls, costs and items use the party below; money and new
+  items go to the trainer. Players need to own the trainer for money and items.
+
+  **Checks** are PTR predicates tested against the whole party: the token's actor, its
+  trainer, and the trainer's unboxed Pokémon. Write `a, b` for both, `a | b` for either,
+  `not a`, or a JSON predicate. Available:
+
+  | Check | Meaning |
+  |---|---|
+  | the party's PTR roll options | anything PTR puts on the actors, e.g. `condition:fainted` |
+  | `item:<slug>` | someone owns the item, e.g. `item:rising-badge` |
+  | `species:<slug>`, `self:level:40+` | a Pokémon of that species / at least that level |
+  | `trainer:level:10+`, `party:size:3+` | the trainer's level / number of Pokémon |
+  | `skill:athletics:adept+` | someone has that rank (pathetic … virtuoso, or a number); skills by name, e.g. `skill:pokemon-education:expert+` |
+  | `flag:x`, `flag:x:3`, `flag:x:2+` | party memory: set / has that value / at least |
+  | `actor:x…`, `world:x…` | actor and world memory, the same way |
+  | `combat:active`, `combat:round:3+` | combat state |
+  | `scene:victory-road` | the scene being viewed |
+  | `time:day` / `time:night` (6:00–18:00 is day), `time:hour:20+`, `season:winter` | from Simple Calendar, or Foundry's clock without it |
+  | `user:gm` | the GM is the one talking |
+
+  **Memory flags** aren't tied to a scene: one set in one scene can be checked by any
+  dialogue in any other.
+  - **Party** (`!set x`): stored on the trainer, shared by their Pokémon. The default.
+  - **Actor** (`!set actor:x`): stored on the actor talking.
+  - **World** (`!set world:x`): shared by everyone. Players' world writes go through the GM's
+    client, so a GM must be connected. `!ask-gm` needs one too.
+
+  The GM can manage memory from the console with
+  `game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.memory`:
+  - `list("Red")` shows world, party and actor flags for Red.
+  - `set("talked-to-elder", true, "Red")` sets a party flag for Red's party.
+  - `set("world:bridge-repaired")` sets a world flag.
+  - `clear("actor:petted", "Pika")` removes a flag.
+  - `wipe("world" | "actors" | "all")` clears memory in bulk.
 
   *Ask again* (regions and tiles) picks whether a dialogue that ended in `!enter`/`!done` plays
   again: every time, once per token, or once per actor.
   `game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.reset()` makes everyone answer
   again. On regions, GM moves aren't blocked and don't start Walking-in dialogues unless *Ask
   the GM too* is on; pressing Interact always works. The world must be relaunched once so
-  Foundry picks up the new behavior type.
+  Foundry picks up the new behavior type and the module's socket (used for world flags and
+  `!ask-gm`).
 
 ### Rule elements & mechanics
 
