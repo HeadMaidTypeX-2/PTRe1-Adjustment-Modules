@@ -202,8 +202,21 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
 
   | Markup | Result |
   |---|---|
-  | `{red}…{/}` | colour: red, blue, green, yellow, orange, purple, pink, gray, white, black, gold, teal, brown, or `{#3cf}` / `{#e0b030}` |
-  | `{b}` `{i}` `{u}` `{big}` `{small}` `{shake}` | bold, italic, underline, larger, smaller, trembling; `{/}` closes the latest one (anything still open closes at the end of the page) |
+  | `{red}…{/}` | colour: red, blue, green, yellow, orange, purple, pink, cyan, gray, white, black, gold, teal, brown, or `{#3cf}` / `{#e0b030}` |
+  | `{b}` `{i}` `{u}` `{big}` `{small}` | bold, italic, underline, larger, smaller |
+  | `{flash1}` `{flash2}` `{flash3}` | colour flashing: red/yellow, cyan/blue, green/light green |
+  | `{glow1}` `{glow2}` `{glow3}` | colour cycling: red→yellow→green→cyan, red→purple→blue, gray→green→cyan |
+  | `{rainbow}` | every letter cycles through the rainbow, one after another |
+  | `{wave}` `{wave2}` | letters bob up and down in a wave (`wave2` also sways sideways) |
+  | `{shake}` / `{jitter}` | the whole text trembles / each letter jitters on its own |
+  | `{pulse}` | grows and shrinks |
+  | `{scroll}` | scrolls across the box, right to left, on its own line |
+  | `{slide}` / `{fade}` | slides down into place / fades in, once |
+  | `{type}` | typewriter: letters appear one at a time |
+
+  `{/}` closes the latest effect; anything still open closes at the end of the page. Effects
+  combine, e.g. `{type}{wave}{red}It's coming…{/}{/}{/}` types out red, waving text. Motion
+  stops for players whose system asks for reduced motion.
   | `{trainer}` `{pokemon}` `{lead}` `{actor}` `{user}` | the trainer, the token's Pokémon (or the party's first), the token's actor, the player |
   | `{flag:x}` `{actor:x}` `{world:x}` | a memory flag's value |
   | `@Name` / `@Name: text` / `@` | show "**Name:**" before the following pages / just this line onwards / stop |

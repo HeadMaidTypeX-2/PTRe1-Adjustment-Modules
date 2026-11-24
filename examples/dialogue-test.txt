@@ -1,0 +1,294 @@
+// =====================================================================
+//  PTRe1 Adjustment Modules: Dialogue feature test
+//  Paste into a Dialogue region behavior (Start with: Interact,
+//  Block entry: on) or a tile's Dialogue section. Every test section
+//  returns to the menu. "Finish" ends in success, "Leave" without.
+//
+//  Optional set-up for full coverage:
+//    - a script macro named "Dialogue Test" (see the [macro] section)
+//    - a GM connected, for world flags and !ask-gm
+//    - Pokémon Assets active, for !cry and portraits
+// =====================================================================
+
+[start]
+@Tester: Welcome to the dialogue test, {trainer}!
+This box tests {b}bold{/}, {i}italic{/}, {u}underline{/}, {big}big{/} and {small}small{/} text.
+---
+@
+A blank line or --- starts a new page, like this one.
+A line break inside a page
+stays on the same page.
+-> menu
+
+// ---------------------------------------------------------------- menus
+[menu]
+What would you like to test?
+> Text colours -> colours
+> Text effects -> effects
+> Speakers & portraits -> speakers
+> Sounds & cries -> sounds
+> Checks -> checks
+> More tests... -> menu2
+
+[menu2]
+More tests:
+> Skill rolls -> rolls
+> Chance -> chance
+> Money & items -> costs
+> Memory flags -> memory
+> More tests... -> menu3
+> Back -> menu
+
+[menu3]
+Even more tests:
+> World state -> world
+> Ask the GM -> askgm
+> Macro -> macro
+> Finish (success) -> finish
+> Leave (no success) -> leave
+> Back -> menu
+
+// ---------------------------------------------------------------- colours
+[colours]
+{red}red{/} {orange}orange{/} {yellow}yellow{/} {green}green{/} {teal}teal{/} {cyan}cyan{/} {blue}blue{/}
+---
+{purple}purple{/} {pink}pink{/} {brown}brown{/} {gold}gold{/} {gray}gray{/} {black}black{/} {#e0b030}hex #e0b030{/} {#3cf}hex #3cf{/}
+-> menu
+
+// ---------------------------------------------------------------- effects
+[effects]
+Flashing: {flash1}flash1{/} {flash2}flash2{/} {flash3}flash3{/}
+---
+Glowing: {glow1}glow1{/} {glow2}glow2{/} {glow3}glow3{/}
+---
+{wave}This line waves.{/}
+{wave2}This one waves and sways.{/}
+---
+{shake}The whole line shakes!{/}
+{jitter}Each letter jitters on its own!{/}
+---
+{pulse}Pulsing!{/} {rainbow}Rainbow letters!{/}
+---
+{slide}This slides down into place{/} and {fade}this fades in{/}.
+---
+{scroll}This line scrolls across the box from right to left...{/}
+---
+{type}This page is typed out, one letter at a time, for {trainer}...{/}
+---
+{type}{wave}{red}Combined: typed, waving and red!{/}{/}{/}
+---
+Unknown braces stay as written: {not-an-effect}.
+An effect left open ends with the page: {glow1}glowing to the end
+-> menu
+
+// ---------------------------------------------------------------- speakers, portraits, placeholders
+[speakers]
+@Ace Trainer: Hi, {trainer}! My name shows before the text.
+!portrait modules/pokemon-assets/img/trainers-profile/trainer_acetrainer_f_hgss.png
+Now my portrait is beside the box, from an image file.
+!portrait lead
+@{lead}: And now it's your lead Pokémon's portrait.
+!portrait off
+@
+Portrait off, speaker cleared.
+---
+Placeholders: trainer {trainer}, Pokémon {pokemon}, lead {lead}, actor {actor}, player {user}.
+-> menu
+
+// ---------------------------------------------------------------- sounds
+[sounds]
+!sound modules/dylans-general-automations/audio/pickup.mp3
+You should have heard a pickup sound with that page.
+!cry lead -> cried | nocry
+
+[cried]
+That was {lead}'s cry.
+-> menu
+
+[nocry]
+No cry played. Is Pokémon Assets active?
+-> menu
+
+// ---------------------------------------------------------------- checks
+[checks]
+Each check that passes adds a button below. Pick any of them to continue.
+> Party has a Pokémon [party:size:1+] -> checks2
+> A Pokémon is level 10+ [self:level:10+] -> checks2
+> Trainer is level 1+ [trainer:level:1+] -> checks2
+> Someone owns a Potion [item:potion] -> checks2
+> Athletics Novice or better [skill:athletics:novice+] -> checks2
+> Nobody is fainted [not condition:fainted] -> checks2
+> A Potion or 2+ Pokémon [item:potion | party:size:2+] -> checks2
+> Continue -> checks2
+
+[checks2]
+!if ["party:size:1+", {"not": "condition:fainted"}] -> json-ok
+The JSON check failed.
+-> menu
+
+[json-ok]
+A JSON predicate passed too.
+-> menu
+
+// ---------------------------------------------------------------- rolls
+[rolls]
+Skill rolls go to chat. First: your token's actor rolls Athletics, DC 10.
+!roll athletics 10 -> roll1-pass | roll1-fail
+
+[roll1-pass]
+{green}Passed{/} Athletics DC 10.
+-> rolls2
+
+[roll1-fail]
+{red}Failed{/} Athletics DC 10.
+-> rolls2
+
+[rolls2]
+Next: the best in the party at Perception rolls, DC 15.
+!roll perception 15 best -> roll2-pass | roll2-fail
+
+[roll2-pass]
+{green}Passed{/} Perception DC 15.
+-> rolls3
+
+[roll2-fail]
+{red}Failed{/} Perception DC 15.
+-> rolls3
+
+[rolls3]
+Last: you choose who rolls Pokémon Education, DC 12.
+!roll "pokemon education" 12 choose -> roll3-pass | roll3-fail
+
+[roll3-pass]
+{green}Passed{/} Pokémon Education DC 12.
+-> menu2
+
+[roll3-fail]
+{red}Failed{/} Pokémon Education DC 12 (or the roll was cancelled).
+-> menu2
+
+// ---------------------------------------------------------------- chance
+[chance]
+!chance 0 -> never
+A 0% chance never hits, so you always see this page.
+!chance 50 -> heads | tails
+
+[never]
+{red}This should never appear!{/}
+-> menu2
+
+[heads]
+Heads! (50%)
+-> menu2
+
+[tails]
+Tails! (50%)
+-> menu2
+
+// ---------------------------------------------------------------- money and items
+[costs]
+!earn 100
+I gave {trainer} 100 money.
+!pay 100 -> paid | broke
+
+[paid]
+...and took it back with !pay.
+!pay 999999999 -> | too-much
+-> items
+
+[broke]
+Couldn't take the money back. Do you own the trainer?
+-> items
+
+[too-much]
+Paying 999,999,999 failed, as it should.
+-> items
+
+[items]
+!give Potion 2 -> given | not-given
+
+[given]
+I gave {trainer} 2 Potions.
+!take Potion 2 -> taken | not-taken
+
+[taken]
+...and took them back with !take.
+-> menu2
+
+[not-taken]
+Couldn't take the Potions back.
+-> menu2
+
+[not-given]
+No item called Potion in world items or compendiums, or you don't own the trainer.
+-> menu2
+
+// ---------------------------------------------------------------- memory flags
+[memory]
+!add test-visits 1
+This is visit {flag:test-visits} to this section (party memory, stored on {trainer}).
+!set actor:test-petted yes
+!set world:test-world-flag -> | no-world
+!if flag:test-visits:3+ -> memory-third
+Come back {red}3 times{/} for a surprise.
+-> memory-menu
+
+[memory-third]
+{rainbow}Third visit or more!{/} Flags remember across scenes and reloads.
+-> memory-menu
+
+[no-world]
+No GM is connected, so the world flag wasn't saved.
+-> memory-menu
+
+[memory-menu]
+Actor flag: "{actor:test-petted}". World flag: "{world:test-world-flag}".
+> Only offered while the party flag is set [flag:test-visits] -> memory-clear
+> Back -> menu2
+
+[memory-clear]
+!clear test-visits
+!clear actor:test-petted
+!clear world:test-world-flag
+Cleared. The visit count is now "{flag:test-visits}" (empty).
+-> menu2
+
+// ---------------------------------------------------------------- world state
+[world]
+World-state checks that pass show up as buttons:
+> In combat [combat:active] -> menu3
+> Not in combat [not combat:active] -> menu3
+> Daytime (6:00 to 18:00) [time:day] -> menu3
+> Night-time [time:night] -> menu3
+> On the "Test Combat Area" scene [scene:test-combat-area] -> menu3
+> I'm the GM [user:gm] -> menu3
+> Back -> menu3
+
+// ---------------------------------------------------------------- GM approval
+[askgm]
+!ask-gm "The dialogue tester wants to continue. Allow it?" -> gm-yes | gm-no
+
+[gm-yes]
+{flash3}The GM said yes!{/}
+-> menu3
+
+[gm-no]
+The GM said no, or no GM is connected.
+-> menu3
+
+// ---------------------------------------------------------------- macro
+[macro]
+!macro Dialogue Test
+If a script macro called "Dialogue Test" exists, it just ran.
+If not, the GM sees a warning.
+-> menu3
+
+// ---------------------------------------------------------------- endings
+[finish]
+{type}This ends in success.{/}
+On a blocking region you step inside; on a tile it counts for "Ask again".
+!enter
+
+[leave]
+You leave the test {glow1}for now{/}.
+!stay

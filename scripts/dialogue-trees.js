@@ -20,7 +20,8 @@
  *
  *   [node]                         start a node ("start" is first)
  *   text                           a page; blank line or --- for the next page
- *   {red}…{/} {#3cf}…{/} {b} {i} {u} {big} {small} {shake}   styles; {/} closes
+ *   {red}…{/} {#3cf}…{/} {b} {i} {u} {big} {small}   styles; {/} closes
+ *   {flash1-3} {glow1-3} {rainbow} {wave} {wave2} {shake} {jitter} {pulse} {scroll} {slide} {fade} {type}   effects
  *   {trainer} {pokemon} {lead} {actor} {user} {flag:x} {actor:x} {world:x}   names / values
  *   @Name  /  @Name: text  /  @    speaker shown before the text (@ alone clears it)
  *   > Label -> node                choice;  > Label [check] -> node  only if the check passes
@@ -202,12 +203,16 @@ export function parseScript(text) {
     addText(line);
   });
 
+  // Every jump must land on a node that exists. Name the line that jumps, so it's clear
+  // which node is missing (not the one doing the jumping).
   for (const n of Object.values(nodes)) {
-    const targets = [
-      ...n.steps.flatMap((s) => [s.target, s.onTrue, s.onFalse]).filter(Boolean),
-      ...n.choices.map((c) => c.target),
+    const jumps = [
+      ...n.steps.flatMap((s) => [s.target, s.onTrue, s.onFalse].filter(Boolean).map((t) => [t, s.raw])),
+      ...n.choices.map((c) => [c.target, `> ${c.label}`]),
     ];
-    for (const t of targets) if (!nodes[t]) errors.push(`[${n.label}] points to [${t}], which doesn't exist.`);
+    for (const [t, line] of jumps) {
+      if (!nodes[t]) errors.push(`in [${n.label}], "${line}" goes to [${t}], but there's no [${t}] node.`);
+    }
   }
   if (nodes.start) start = "start";
   return { start, nodes, errors };
@@ -293,37 +298,79 @@ export async function runScript(script, io) {
 const COLORS = {
   red: "#d8342c", blue: "#2f6fdb", green: "#2a9a3f", yellow: "#c99a00", orange: "#e0731a", purple: "#8a4fd1",
   pink: "#d9529b", gray: "#7a7a7a", grey: "#7a7a7a", white: "#ffffff", black: "#000000", gold: "#c29b1f",
-  teal: "#178f8f", brown: "#8b5a2b",
+  teal: "#178f8f", cyan: "#1aa7c4", brown: "#8b5a2b",
 };
 const STYLE_TAGS = { b: "strong", i: "em", u: "u" };
-const CLASS_TAGS = ["big", "small", "shake"];
+/** Effects on the whole span. */
+export const SPAN_FX = ["big", "small", "shake", "pulse", "fade", "slide", "flash1", "flash2", "flash3", "glow1", "glow2", "glow3"];
+/** Effects on each letter (wave, typewriter…): the text inside is split into letters. */
+export const LETTER_FX = ["wave", "wave2", "jitter", "rainbow", "type"];
 
-/** "{red}Hi {trainer}{/}" -> HTML. Unknown {…} stays as written. */
+/**
+ * "{red}Hi {trainer}{/}" -> HTML. Unknown {…} stays as written; {/} closes the
+ * latest effect and anything left open closes at the end.
+ */
 export function renderMarkup(text, placeholder = () => undefined) {
-  const open = [];
-  let out = String(text).replace(/\{([^{}]*)\}/g, (whole, inner) => {
-    const tag = inner.trim();
+  const src = String(text);
+  const stack = []; // { close, letters }
+  let letterDepth = 0;
+  let index = 0; // letter number, for staggered timing
+  let out = "";
+
+  // Inside a letter effect, wrap each character (entities count as one); words stay
+  // together so lines still wrap between words. Tags (<br>, HTML) pass through.
+  const letters = (s) => s.replace(/(<[^>]*>)|(\s+)|((?:&[#a-z0-9]+;|[^\s<&]|&)+)/giu, (m, tag, space, word) => {
+    if (tag || space) return m;
+    const chars = word.match(/&[#a-z0-9]+;|./gsu);
+    return `<span class="ptre1-word">${chars.map((c) => `<span class="ptre1-ch" style="--i:${index++}">${c}</span>`).join("")}</span>`;
+  });
+  const emit = (s) => {
+    out += letterDepth ? letters(s) : s;
+  };
+
+  const re = /\{([^{}]*)\}/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(src))) {
+    emit(src.slice(last, m.index));
+    last = re.lastIndex;
+    const tag = m[1].trim();
     const low = tag.toLowerCase();
     if (low === "/") {
-      const t = open.pop();
-      return t ? `</${t}>` : "";
+      const top = stack.pop();
+      if (top) {
+        out += top.close;
+        if (top.letters) letterDepth--;
+      }
+      continue;
     }
-    if (COLORS[low] || /^#[0-9a-f]{3,8}$/i.test(tag)) {
-      open.push("span");
-      return `<span style="color:${COLORS[low] ?? tag}">`;
+    let open = null;
+    let close = "</span>";
+    let perLetter = false;
+    if (COLORS[low] || /^#[0-9a-f]{3,8}$/i.test(tag)) open = `<span style="color:${COLORS[low] ?? tag}">`;
+    else if (STYLE_TAGS[low]) {
+      open = `<${STYLE_TAGS[low]}>`;
+      close = `</${STYLE_TAGS[low]}>`;
+    } else if (SPAN_FX.includes(low)) open = `<span class="ptre1-fx-${low}">`;
+    else if (low === "scroll") {
+      open = `<span class="ptre1-fx-scroll"><span>`;
+      close = "</span></span>";
+    } else if (LETTER_FX.includes(low)) {
+      open = `<span class="ptre1-fx-${low}">`;
+      perLetter = true;
     }
-    if (STYLE_TAGS[low]) {
-      open.push(STYLE_TAGS[low]);
-      return `<${STYLE_TAGS[low]}>`;
-    }
-    if (CLASS_TAGS.includes(low)) {
-      open.push("span");
-      return `<span class="ptre1-dlg-${low}">`;
+    if (open) {
+      if (perLetter && !letterDepth) index = 0;
+      out += open;
+      stack.push({ close, letters: perLetter });
+      if (perLetter) letterDepth++;
+      continue;
     }
     const value = placeholder(tag);
-    return value === undefined || value === null ? whole : escapeHTML(value);
-  });
-  while (open.length) out += `</${open.pop()}>`;
+    emit(value === undefined || value === null ? m[0] : escapeHTML(value));
+  }
+  emit(src.slice(last));
+  while (stack.length) out += stack.pop().close;
   return out;
 }
 
@@ -1074,7 +1121,10 @@ async function converse(tokenDoc, source) {
   const script = parseScript(source.cfg.script ?? "");
   if (script.errors.length) {
     console.warn(`${MODULE_ID} | Dialogue "${source.name}":\n  ${script.errors.join("\n  ")}`);
-    if (game.user.isGM) ui.notifications.warn(`Dialogue "${source.name}": ${script.errors[0]}`);
+    if (game.user.isGM) {
+      const more = script.errors.length > 1 ? ` (and ${script.errors.length - 1} more problem${script.errors.length > 2 ? "s" : ""}; all are listed in the console, F12)` : "";
+      ui.notifications.warn(`Dialogue "${source.name}": ${script.errors[0]}${more}`);
+    }
   }
   if (!script.start) return "stay";
 
@@ -1295,7 +1345,7 @@ async function onTileInteract(tile, tokenDoc) {
  *  Region behavior type
  * ------------------------------------------------------------------ */
 
-const SCRIPT_HINT = "[node] starts a node; text lines are pages (blank line or --- for a new page); \"> Label -> node\" adds a choice (\"> Label [check] -> node\" only if the check passes); \"-> node\" jumps; !if <check> -> node. Text: {red}…{/}, {b}, {shake}, {trainer}, @Speaker. Commands: !macro, !portrait, !sound, !cry, !roll <skill> <dc> -> pass | fail, !chance, !pay, !earn, !take, !give, !set / !add / !clear flags, !ask-gm. !enter (or !done) ends in success; !stay ends without (the default). Full list in the module README.";
+const SCRIPT_HINT = "[node] starts a node; text lines are pages (blank line or --- for a new page); \"> Label -> node\" adds a choice (\"> Label [check] -> node\" only if the check passes); \"-> node\" jumps; !if <check> -> node. Text: {red}…{/}, {b}, effects such as {wave}, {flash1}, {glow1}, {rainbow}, {shake}, {scroll}, {type}, placeholders such as {trainer}, and @Speaker. Commands: !macro, !portrait, !sound, !cry, !roll <skill> <dc> -> pass | fail, !chance, !pay, !earn, !take, !give, !set / !add / !clear flags, !ask-gm. !enter (or !done) ends in success; !stay ends without (the default). Full list in the module README.";
 const REPEAT_CHOICES = { always: "Every time", token: "Once per token", actor: "Once per actor" };
 
 function makeBehaviorType() {
@@ -1405,14 +1455,74 @@ const STYLE = `
   details.ptre1-dialogue { border: 1px solid var(--color-border-light-2, rgba(128,128,128,.4)); border-radius: 4px; padding: 0.25rem 0.5rem; margin: 0.5rem 0; }
   details.ptre1-dialogue > summary { cursor: pointer; font-weight: bold; padding: 0.25rem 0; }
   .ptre1-dlg-speaker { font-weight: bold; }
-  .ptre1-dlg-big { font-size: 1.35em; }
-  .ptre1-dlg-small { font-size: 0.75em; }
-  .ptre1-dlg-shake { display: inline-block; animation: ptre1-dlg-shake 0.25s linear infinite; }
-  @keyframes ptre1-dlg-shake {
+
+  /* ---- whole-span effects ---- */
+  .ptre1-fx-big { font-size: 1.35em; }
+  .ptre1-fx-small { font-size: 0.75em; }
+  .ptre1-fx-shake { display: inline-block; animation: ptre1-shake 0.25s linear infinite; }
+  .ptre1-fx-pulse { display: inline-block; animation: ptre1-pulse 1s ease-in-out infinite; }
+  .ptre1-fx-fade { animation: ptre1-fade 0.8s ease-out both; }
+  .ptre1-fx-slide { display: inline-block; animation: ptre1-slide 0.45s ease-out both; }
+  .ptre1-fx-flash1 { animation: ptre1-flash1 0.6s steps(1) infinite; }
+  .ptre1-fx-flash2 { animation: ptre1-flash2 0.6s steps(1) infinite; }
+  .ptre1-fx-flash3 { animation: ptre1-flash3 0.6s steps(1) infinite; }
+  .ptre1-fx-glow1 { animation: ptre1-glow1 2.4s linear infinite; }
+  .ptre1-fx-glow2 { animation: ptre1-glow2 2.4s linear infinite; }
+  .ptre1-fx-glow3 { animation: ptre1-glow3 2.4s linear infinite; }
+  .ptre1-fx-scroll { display: block; overflow: hidden; white-space: nowrap; }
+  .ptre1-fx-scroll > span { display: inline-block; padding-left: 100%; animation: ptre1-scroll 6s linear infinite; }
+
+  /* ---- per-letter effects: each slot (motion / colour / reveal) can be combined ---- */
+  .ptre1-word { display: inline-block; white-space: nowrap; }
+  .ptre1-ch {
+    display: inline-block; white-space: pre;
+    animation-name: var(--fx-m, none), var(--fx-c, none), var(--fx-r, none);
+    animation-duration: var(--fx-md, 1s), var(--fx-cd, 1s), var(--fx-rd, 1ms);
+    animation-timing-function: ease-in-out, linear, steps(1, end);
+    animation-iteration-count: infinite, infinite, 1;
+    animation-fill-mode: none, none, both;
+    animation-delay: calc(var(--i, 0) * var(--fx-ms, 0s)), calc(var(--i, 0) * var(--fx-cs, 0s)), calc(var(--i, 0) * var(--fx-rs, 0s));
+  }
+  .ptre1-fx-wave { --fx-m: ptre1-wave; --fx-md: 1.2s; --fx-ms: -0.1s; }
+  .ptre1-fx-wave2 { --fx-m: ptre1-wave2; --fx-md: 1.4s; --fx-ms: -0.1s; }
+  .ptre1-fx-jitter { --fx-m: ptre1-jitter; --fx-md: 0.3s; --fx-ms: -0.07s; }
+  .ptre1-fx-rainbow { --fx-c: ptre1-rainbow; --fx-cd: 2s; --fx-cs: -0.12s; }
+  .ptre1-fx-type { --fx-r: ptre1-type; --fx-rs: 0.04s; }
+
+  @keyframes ptre1-shake {
     0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-1px, 1px); }
     50% { transform: translate(1px, -1px); } 75% { transform: translate(-1px, -1px); }
   }
-  @media (prefers-reduced-motion: reduce) { .ptre1-dlg-shake { animation: none; } }
+  @keyframes ptre1-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+  @keyframes ptre1-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ptre1-slide { from { transform: translateY(-0.8em); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes ptre1-flash1 { 0% { color: #d8342c; } 50% { color: #e0a800; } }
+  @keyframes ptre1-flash2 { 0% { color: #1aa7c4; } 50% { color: #2f4fdb; } }
+  @keyframes ptre1-flash3 { 0% { color: #2a9a3f; } 50% { color: #7fcf2a; } }
+  @keyframes ptre1-glow1 {
+    0%, 100% { color: #d8342c; } 25% { color: #e0a800; } 50% { color: #2a9a3f; } 75% { color: #1aa7c4; }
+  }
+  @keyframes ptre1-glow2 { 0%, 100% { color: #d8342c; } 33% { color: #b03fc9; } 66% { color: #2f4fdb; } }
+  @keyframes ptre1-glow3 { 0%, 100% { color: #8a8a8a; } 33% { color: #2a9a3f; } 66% { color: #1aa7c4; } }
+  @keyframes ptre1-scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+  @keyframes ptre1-wave { 0%, 100% { transform: translateY(0.12em); } 50% { transform: translateY(-0.22em); } }
+  @keyframes ptre1-wave2 {
+    0%, 100% { transform: translate(0, 0.12em); } 25% { transform: translate(0.1em, -0.05em); }
+    50% { transform: translate(0, -0.22em); } 75% { transform: translate(-0.1em, -0.05em); }
+  }
+  @keyframes ptre1-jitter {
+    0%, 100% { transform: translate(0, 0); } 25% { transform: translate(0.04em, -0.08em); }
+    50% { transform: translate(-0.05em, 0.05em); } 75% { transform: translate(0.03em, 0.07em); }
+  }
+  @keyframes ptre1-rainbow {
+    0%, 100% { color: #d8342c; } 17% { color: #e0731a; } 33% { color: #c99a00; }
+    50% { color: #2a9a3f; } 67% { color: #2f6fdb; } 83% { color: #8a4fd1; }
+  }
+  @keyframes ptre1-type { from { opacity: 0; } to { opacity: 1; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ptre1-ch, .ptre1-fx-shake, .ptre1-fx-pulse, .ptre1-fx-slide, .ptre1-fx-scroll > span { animation: none !important; }
+  }
 `;
 
 Hooks.once("init", () => {
