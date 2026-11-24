@@ -422,16 +422,15 @@ async function showPage(title, html) {
   return foundry.applications.api.DialogV2.prompt({ window: { title }, content: html, rejectClose: false });
 }
 
-/** Columns in the choice grid: 2 x N up to four choices, then three wide. */
-function choiceColumns(count) {
-  return Math.max(1, Math.min(count, count > 4 ? 3 : 2));
-}
+/** Choice grid: two columns, and at most this many rows visible at once (the rest scroll). */
+const CHOICE_COLUMNS = 2;
+const CHOICE_ROWS = 2;
 
 /**
  * Arrow keys move through the choice grid: Left / Right step through the choices in reading
- * order (wrapping), Up / Down move a whole row. Listens on window in the capture phase, so it
- * runs before DGA's own Up / Down handler (a plain list step) and before Foundry's keybindings
- * (which would pan the canvas), and stops both.
+ * order (wrapping), Up / Down move a whole row (wrapping). Listens on window in the capture phase,
+ * so it runs before DGA's own Up / Down handler (a plain list step) and before Foundry's
+ * keybindings (which would pan the canvas), and stops both.
  */
 function choiceKeys(getRoot, columns) {
   const onKey = (ev) => {
@@ -462,11 +461,64 @@ function choiceKeys(getRoot, columns) {
   return () => window.removeEventListener("keydown", onKey, true);
 }
 
+/**
+ * The choice wheel: the footer shows CHOICE_ROWS rows and scrolls so the focused choice's row is
+ * in view. Moving one row scrolls smoothly; jumping further (wrapping past the end back to the
+ * start, or the reverse) snaps. Faded edges mark rows hidden above / below.
+ */
+function choiceWheel(root, columns) {
+  const footer = root.querySelector("footer");
+  if (!footer || footer.dataset.ptre1Wheel) return;
+  footer.dataset.ptre1Wheel = "1";
+  const buttons = () => Array.from(footer.querySelectorAll("button:not(.header-control)"));
+  const rows = Math.ceil(buttons().length / columns);
+  if (rows <= CHOICE_ROWS) return;
+
+  // Bouncing arrows beside the wheel, as the games mark a list that continues.
+  const arrows = document.createElement("div");
+  arrows.className = "ptre1-wheel-arrows";
+  arrows.setAttribute("aria-hidden", "true");
+  arrows.innerHTML = `<span class="ptre1-wheel-up">▲</span><span class="ptre1-wheel-down">▼</span>`;
+  footer.after(arrows);
+
+  const rowTop = (r) => buttons()[r * columns]?.offsetTop ?? 0;
+  const stride = () => rowTop(1) - rowTop(0);
+  const fit = () => {
+    const first = buttons()[0];
+    if (!first) return;
+    const height = `${stride() * (CHOICE_ROWS - 1) + first.offsetHeight}px`;
+    footer.style.maxHeight = height;
+    arrows.style.height = height;
+    edges();
+  };
+  const edges = () => {
+    arrows.classList.toggle("ptre1-more-above", footer.scrollTop > 1);
+    arrows.classList.toggle("ptre1-more-below", footer.scrollTop + footer.clientHeight < footer.scrollHeight - 1);
+  };
+
+  let shownRow = 0; // first visible row
+  footer.addEventListener("focusin", (ev) => {
+    const i = buttons().indexOf(ev.target);
+    if (i < 0) return;
+    const row = Math.floor(i / columns);
+    let next = shownRow;
+    if (row < shownRow) next = row;
+    else if (row >= shownRow + CHOICE_ROWS) next = row - CHOICE_ROWS + 1;
+    if (next === shownRow) return;
+    const snap = Math.abs(next - shownRow) > 1;
+    shownRow = next;
+    footer.scrollTo({ top: rowTop(next) - rowTop(0), behavior: snap ? "instant" : "smooth" });
+  });
+  footer.addEventListener("scroll", edges, { passive: true });
+  fit();
+  requestAnimationFrame(fit); // again once fonts and layout have settled
+}
+
 /** Buttons with labels; resolves to the index picked, or null when closed. */
 async function showButtons(title, html, labels) {
   const footer = dga()?.FooterDialog;
   const Dialog = footer ?? foundry.applications.api.DialogV2;
-  const columns = choiceColumns(labels.length);
+  const columns = Math.min(labels.length, CHOICE_COLUMNS) || 1;
   let root = null;
   const stopKeys = choiceKeys(() => root, columns);
   blip();
@@ -480,7 +532,9 @@ async function showButtons(title, html, labels) {
       // V12 passes the element, V13+ the dialog.
       render: (_event, d) => {
         root = d instanceof HTMLElement ? d : d?.element ?? null;
-        root?.style.setProperty("--ptre1-choice-cols", String(columns));
+        if (!root) return;
+        root.style.setProperty("--ptre1-choice-cols", String(columns));
+        choiceWheel(root, columns);
       },
     });
     const index = /^choice(\d+)$/.exec(result ?? "")?.[1];
@@ -1514,7 +1568,8 @@ const STYLE = `
      its height is the box's, which depends on the text, not the choices. Short text + several
      choices wrapped into a second column that ran off the right edge. Here the text and the
      choices sit side by side in normal flow, the choices in a grid (--ptre1-choice-cols wide, set
-     by showButtons), and the box (anchored to the bottom of the screen) grows upward to fit. */
+     by showButtons) that shows at most CHOICE_ROWS rows and scrolls (choiceWheel), so the box
+     keeps its size however many choices there are; bouncing arrows mark hidden rows. */
   .dga.footer-dialog.ptre1-dialogue-box.dialog-choices .window-content form.dialog-form {
     display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 1em;
   }
@@ -1525,8 +1580,19 @@ const STYLE = `
     position: static; flex: 0 1 auto; display: grid;
     grid-template-columns: repeat(var(--ptre1-choice-cols, 2), minmax(0, max-content));
     column-gap: 1.5em; row-gap: 0.25em; align-items: center;
-    max-width: 65%; max-height: 60vh; overflow-y: auto; padding: 0 0 0 0.5em;
+    max-width: 65%; overflow: hidden; padding: 0 0 0 0.5em; scrollbar-width: none;
   }
+  /* "More choices" arrows: shown only on the side with hidden rows, bouncing toward them. */
+  .dga.footer-dialog.ptre1-dialogue-box .ptre1-wheel-arrows {
+    flex: none; display: flex; flex-direction: column; justify-content: space-between;
+    margin-left: -0.5em; font-family: "Pokemon DPPt", sans-serif; font-size: x-large; line-height: 1;
+    color: black; text-shadow: 1px 1px lightgray;
+  }
+  .ptre1-wheel-arrows > span { visibility: hidden; }
+  .ptre1-wheel-arrows.ptre1-more-above > .ptre1-wheel-up { visibility: visible; animation: ptre1-wheel-up 0.8s ease-in-out infinite; }
+  .ptre1-wheel-arrows.ptre1-more-below > .ptre1-wheel-down { visibility: visible; animation: ptre1-wheel-down 0.8s ease-in-out infinite; }
+  @keyframes ptre1-wheel-up { 0%, 100% { transform: translateY(0.15em); } 50% { transform: translateY(-0.1em); } }
+  @keyframes ptre1-wheel-down { 0%, 100% { transform: translateY(-0.15em); } 50% { transform: translateY(0.1em); } }
   /* The focus arrow sits in reserved space, so moving between choices doesn't shift the grid. */
   .dga.footer-dialog.ptre1-dialogue-box.dialog-choices footer > button {
     position: relative; flex: none; height: auto; min-height: calc(1.25 * var(--input-height, 2rem));
@@ -1607,7 +1673,7 @@ const STYLE = `
   @keyframes ptre1-type { from, to { visibility: hidden; } }
 
   @media (prefers-reduced-motion: reduce) {
-    .ptre1-ch, .ptre1-fx-shake, .ptre1-fx-pulse, .ptre1-fx-slide, .ptre1-fx-scroll > span { animation: none !important; }
+    .ptre1-ch, .ptre1-wheel-arrows > span, .ptre1-fx-shake, .ptre1-fx-pulse, .ptre1-fx-slide, .ptre1-fx-scroll > span { animation: none !important; }
   }
 `;
 
