@@ -422,20 +422,72 @@ async function showPage(title, html) {
   return foundry.applications.api.DialogV2.prompt({ window: { title }, content: html, rejectClose: false });
 }
 
+/** Columns in the choice grid: 2 x N up to four choices, then three wide. */
+function choiceColumns(count) {
+  return Math.max(1, Math.min(count, count > 4 ? 3 : 2));
+}
+
+/**
+ * Arrow keys move through the choice grid: Left / Right step through the choices in reading
+ * order (wrapping), Up / Down move a whole row. Listens on window in the capture phase, so it
+ * runs before DGA's own Up / Down handler (a plain list step) and before Foundry's keybindings
+ * (which would pan the canvas), and stops both.
+ */
+function choiceKeys(getRoot, columns) {
+  const onKey = (ev) => {
+    const root = getRoot();
+    if (!root) return; // not rendered yet
+    if (!root.isConnected) return window.removeEventListener("keydown", onKey, true);
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[ev.key];
+    if (!step) return;
+    const buttons = Array.from(root.querySelectorAll("footer button:not(.header-control)"));
+    if (!buttons.length) return;
+    let i = buttons.indexOf(document.activeElement);
+    if (i < 0) i = 0;
+    else if (Math.abs(step) === 1) i = (i + step + buttons.length) % buttons.length;
+    else {
+      // Up / Down: stay in the same column, wrapping top <-> bottom.
+      const rows = Math.ceil(buttons.length / columns);
+      const col = i % columns;
+      let row = Math.floor(i / columns);
+      do row = (row + Math.sign(step) + rows) % rows;
+      while (row * columns + col >= buttons.length);
+      i = row * columns + col;
+    }
+    buttons[i].focus({ focusVisible: true });
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+  };
+  window.addEventListener("keydown", onKey, true);
+  return () => window.removeEventListener("keydown", onKey, true);
+}
+
 /** Buttons with labels; resolves to the index picked, or null when closed. */
 async function showButtons(title, html, labels) {
   const footer = dga()?.FooterDialog;
   const Dialog = footer ?? foundry.applications.api.DialogV2;
+  const columns = choiceColumns(labels.length);
+  let root = null;
+  const stopKeys = choiceKeys(() => root, columns);
   blip();
-  const result = await Dialog.wait({
-    window: { title },
-    classes: ["ptre1-dialogue-box"],
-    content: footer ? `<div class="dialog-content">${html}</div>` : html,
-    buttons: labels.map((label, i) => ({ action: `choice${i}`, label, default: i === 0 })),
-    rejectClose: false,
-  });
-  const index = /^choice(\d+)$/.exec(result ?? "")?.[1];
-  return index === undefined ? null : Number(index);
+  try {
+    const result = await Dialog.wait({
+      window: { title },
+      classes: ["ptre1-dialogue-box"],
+      content: footer ? `<div class="dialog-content">${html}</div>` : html,
+      buttons: labels.map((label, i) => ({ action: `choice${i}`, label, default: i === 0 })),
+      rejectClose: false,
+      // V12 passes the element, V13+ the dialog.
+      render: (_event, d) => {
+        root = d instanceof HTMLElement ? d : d?.element ?? null;
+        root?.style.setProperty("--ptre1-choice-cols", String(columns));
+      },
+    });
+    const index = /^choice(\d+)$/.exec(result ?? "")?.[1];
+    return index === undefined ? null : Number(index);
+  } finally {
+    stopKeys();
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1460,9 +1512,9 @@ const STYLE = `
   /* ---- choice box layout ----
      pokemon-assets pins DGA's choice footer to the box's right edge (absolute, top/bottom 0), so
      its height is the box's, which depends on the text, not the choices. Short text + several
-     choices made the column wrap into a second column that ran off the right edge. Here the text
-     and the choices sit side by side in normal flow: the text wraps in what's left, and the box
-     (anchored to the bottom of the screen) grows upward to fit every choice. */
+     choices wrapped into a second column that ran off the right edge. Here the text and the
+     choices sit side by side in normal flow, the choices in a grid (--ptre1-choice-cols wide, set
+     by showButtons), and the box (anchored to the bottom of the screen) grows upward to fit. */
   .dga.footer-dialog.ptre1-dialogue-box.dialog-choices .window-content form.dialog-form {
     display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 1em;
   }
@@ -1470,12 +1522,18 @@ const STYLE = `
     flex: 1 1 auto; min-width: 0; align-self: stretch; overflow-wrap: anywhere;
   }
   .dga.footer-dialog.ptre1-dialogue-box.dialog-choices footer {
-    position: static; flex: 0 1 auto; flex-direction: column; flex-wrap: nowrap;
-    align-items: stretch; max-width: 45%; max-height: 60vh; overflow-y: auto; padding: 0 0 0 0.5em;
+    position: static; flex: 0 1 auto; display: grid;
+    grid-template-columns: repeat(var(--ptre1-choice-cols, 2), minmax(0, max-content));
+    column-gap: 1.5em; row-gap: 0.25em; align-items: center;
+    max-width: 65%; max-height: 60vh; overflow-y: auto; padding: 0 0 0 0.5em;
   }
+  /* The focus arrow sits in reserved space, so moving between choices doesn't shift the grid. */
   .dga.footer-dialog.ptre1-dialogue-box.dialog-choices footer > button {
-    flex: 0 0 auto; height: auto; min-height: calc(1.25 * var(--input-height, 2rem));
-    white-space: normal; text-align: left; justify-content: flex-start; line-height: 1.1;
+    position: relative; flex: none; height: auto; min-height: calc(1.25 * var(--input-height, 2rem));
+    padding: 0 0 0 1.1em; white-space: normal; text-align: left; justify-content: flex-start; line-height: 1.1;
+  }
+  .dga.footer-dialog.ptre1-dialogue-box.dialog-choices footer > button:focus::before {
+    content: "▶"; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
   }
 
   /* ---- whole-span effects ---- */
