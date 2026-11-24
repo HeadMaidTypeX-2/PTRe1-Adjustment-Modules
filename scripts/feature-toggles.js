@@ -98,6 +98,11 @@ export const FEATURES = [
     title: "Rock Climb & Waterfall region behaviors",
     description: "Replaces Pokémon Assets' 'Place Climbable Rocks' / 'Place Waterfall' region tools with Rock Climb and Waterfall Region Behaviors that work like Surf: tokens can't walk in, and facing the region and pressing Interact crosses it in a straight line if the party knows the move. Turning this off brings the old tools back and makes the behaviors inert (they stay available so existing regions remain valid).",
   },
+  {
+    id: "fieldMoveCry", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
+    title: "Field move cry & picture",
+    description: "When a Pokémon uses a field move (Cut, Rock Smash, Strength, Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), shows its picture beside the 'used the move' text and plays its cry before the move goes ahead. The cry plays for you only, at the Cry volume in Dylan's volume settings.",
+  },
 ];
 
 const byId = new Map(FEATURES.map((f) => [f.id, f]));

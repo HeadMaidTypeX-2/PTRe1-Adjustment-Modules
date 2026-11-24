@@ -25,6 +25,7 @@
     "scripts/reinforcement-round-end.js",
     "scripts/trainer-prereq-or-fix.js",
     "scripts/field-move-regions.js",
+    "scripts/field-move-cry.js",
     "scripts/type-overwrite-display-fix.js",
     "scripts/battle-transitions-fix.js"
   ],
