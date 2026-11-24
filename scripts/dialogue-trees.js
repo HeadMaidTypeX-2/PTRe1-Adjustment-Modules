@@ -1494,6 +1494,9 @@ const STYLE = `
     50% { transform: translate(1px, -1px); } 75% { transform: translate(-1px, -1px); }
   }
   @keyframes ptre1-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+  /* Looping motion only goes down from the resting position, never up: the text sits flush
+     against the top of the box, and anything rising above it gets sliced off by the frame. */
+  .ptre1-fx-pulse { transform-origin: 50% 0; }
   @keyframes ptre1-fade { from { opacity: 0; } to { opacity: 1; } }
   @keyframes ptre1-slide { from { transform: translateY(-0.8em); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes ptre1-flash1 { 0% { color: #d8342c; } 50% { color: #e0a800; } }
@@ -1505,14 +1508,14 @@ const STYLE = `
   @keyframes ptre1-glow2 { 0%, 100% { color: #d8342c; } 33% { color: #b03fc9; } 66% { color: #2f4fdb; } }
   @keyframes ptre1-glow3 { 0%, 100% { color: #8a8a8a; } 33% { color: #2a9a3f; } 66% { color: #1aa7c4; } }
   @keyframes ptre1-scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
-  @keyframes ptre1-wave { 0%, 100% { transform: translateY(0.12em); } 50% { transform: translateY(-0.22em); } }
+  @keyframes ptre1-wave { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(0.3em); } }
   @keyframes ptre1-wave2 {
-    0%, 100% { transform: translate(0, 0.12em); } 25% { transform: translate(0.1em, -0.05em); }
-    50% { transform: translate(0, -0.22em); } 75% { transform: translate(-0.1em, -0.05em); }
+    0%, 100% { transform: translate(0, 0); } 25% { transform: translate(0.1em, 0.15em); }
+    50% { transform: translate(0, 0.3em); } 75% { transform: translate(-0.1em, 0.15em); }
   }
   @keyframes ptre1-jitter {
-    0%, 100% { transform: translate(0, 0); } 25% { transform: translate(0.04em, -0.08em); }
-    50% { transform: translate(-0.05em, 0.05em); } 75% { transform: translate(0.03em, 0.07em); }
+    0%, 100% { transform: translate(0, 0.04em); } 25% { transform: translate(0.04em, 0); }
+    50% { transform: translate(-0.05em, 0.1em); } 75% { transform: translate(0.03em, 0.06em); }
   }
   @keyframes ptre1-rainbow {
     0%, 100% { color: #d8342c; } 17% { color: #e0731a; } 33% { color: #c99a00; }
