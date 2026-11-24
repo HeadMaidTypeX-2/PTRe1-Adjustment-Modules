@@ -342,19 +342,34 @@ function dga() {
   return game.modules.get(DGA)?.active ? game.modules.get(DGA).api : null;
 }
 
-/** DGA's interaction blip before every text box, as its field moves do. */
-async function blip() {
+/**
+ * DGA's interaction blip as every text box opens, as its field moves do.
+ * Not awaited: DGA's Interact() waits for the whole sound (plus loading it)
+ * before returning, which left about a second of empty screen between pages.
+ * The sound now plays while the box appears.
+ */
+function blip() {
   const interact = dga()?.scripts?.Interact;
   if (typeof interact !== "function") return;
+  Promise.resolve()
+    .then(() => interact())
+    .catch((err) => console.warn(`${MODULE_ID} | Dialogue: interaction sound failed`, err));
+}
+
+/** Load DGA's interaction sound up front, so the first blip doesn't wait on a download. */
+function preloadBlip() {
+  const src = game.modules.get(DGA)?.defaults?.interactionSound;
+  if (!src || !game.modules.get(DGA)?.active) return;
   try {
-    await interact();
+    if (globalThis.Sequencer?.Preloader?.preload) globalThis.Sequencer.Preloader.preload([src]);
+    else foundry.audio?.AudioHelper?.preloadSound?.(src);
   } catch (err) {
-    console.warn(`${MODULE_ID} | Dialogue: interaction sound failed`, err);
+    console.warn(`${MODULE_ID} | Dialogue: couldn't preload the interaction sound`, err);
   }
 }
 
 async function showPage(title, html) {
-  await blip();
+  blip();
   const prompt = dga()?.scripts?.FooterDialogPrompt;
   if (prompt) return prompt({ title, content: html });
   return foundry.applications.api.DialogV2.prompt({ window: { title }, content: html, rejectClose: false });
@@ -364,7 +379,7 @@ async function showPage(title, html) {
 async function showButtons(title, html, labels) {
   const footer = dga()?.FooterDialog;
   const Dialog = footer ?? foundry.applications.api.DialogV2;
-  await blip();
+  blip();
   const result = await Dialog.wait({
     window: { title },
     content: footer ? `<div class="dialog-content">${html}</div>` : html,
@@ -1435,4 +1450,5 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   game.socket?.on(SOCKET, onSocket);
+  if (featureEnabled(FEATURE)) preloadBlip();
 });
