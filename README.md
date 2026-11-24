@@ -78,6 +78,11 @@ Independent components, each under `scripts/`.
    `glamour-weaver` with the item's `glamour-weaver-cr` slug, so a Class Rework Glamour
    Weaver never qualified for Fey Law. This affected 37 classes and 221 features.
 
+   Grouped prerequisites added in PTR 4.4.3.58 (`All A or B options` followed by `A: …` and
+   `B: …` lines, as on Type Ace (Dark) (Class Rework)) are checked as a whole: the feature
+   qualifies when every line of at least one group passes, and each line still gets the "or"
+   fixes above.
+
    The window still shows PTR's original text. Remove once fixed upstream.
 
 ### Pokémon Assets / Dylan's General Automations fixes
