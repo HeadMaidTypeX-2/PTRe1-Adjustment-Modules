@@ -3,9 +3,11 @@
  * --------------------------------------------
  * When a Pokémon uses a field move (Cut, Rock Smash, Strength, Whirlpool,
  * Rock Climb, Waterfall, Headbutt, Surf), Pokémon Assets shows
- * "{name} used <Move>!" in DGA's footer text box. This puts the Pokémon's
- * picture in that same box, next to the text, and plays its cry. The move only
- * goes ahead once the box is dismissed, as before.
+ * "{name} used <Move>!" in DGA's footer text box. Like talking to Pikachu in
+ * Pokémon Yellow, this opens a separate framed window with the Pokémon's
+ * portrait, centred in the space above the text box, and plays its cry. The
+ * window closes when the text box is dismissed, and only then does the move
+ * go ahead, as before. Only the triggering player sees and hears it.
  *
  * Pokémon Assets runs every field move through its internal UseFieldMove,
  * which looks up DGA's `api.scripts.FooterDialogPrompt` on each call. Wrapping
@@ -43,20 +45,39 @@ const FIELD_MOVES = {
 };
 
 const STYLE_ID = "ptre1-field-move-cry-style";
+const BOX_CLASS = "ptre1-fm-portrait";
+// Framed like Pokémon Assets' text box: gold edge, grey rim, white inside.
 const STYLE = `
-  .ptre1-fm-cry { display: flex; align-items: center; gap: 0.75rem; }
-  .ptre1-fm-cry-sprite {
-    flex: 0 0 auto; width: 96px; height: 96px; object-fit: contain; border: none;
-    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
-    animation: ptre1-fm-cry-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  .${BOX_CLASS} {
+    position: fixed; z-index: 1000; pointer-events: none;
+    left: calc((100vw - 310px) / 2); top: calc((100vh - 200px) / 2);
+    width: min(36vh, 320px); aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box; padding: 10px;
+    background: #66666f; border: 3px solid #e0b030; border-radius: 2px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    animation: ptre1-fm-portrait-in 350ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
-  .ptre1-fm-cry-text { flex: 1 1 auto; }
-  @keyframes ptre1-fm-cry-pop {
-    0%   { transform: scale(0.4) translateY(12px); opacity: 0; }
-    60%  { transform: scale(1.08) translateY(0); opacity: 1; }
-    100% { transform: scale(1); }
+  .${BOX_CLASS}.closing { animation: ptre1-fm-portrait-out 150ms ease-in both; }
+  .${BOX_CLASS} .ptre1-fm-portrait-inner {
+    width: 100%; height: 100%; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: white; border: 2px solid #38383e;
   }
-  @media (prefers-reduced-motion: reduce) { .ptre1-fm-cry-sprite { animation: none; } }
+  .${BOX_CLASS} img {
+    width: 85%; height: 85%; object-fit: contain; border: none;
+    image-rendering: pixelated;
+  }
+  @keyframes ptre1-fm-portrait-in {
+    from { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+    to   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+  @keyframes ptre1-fm-portrait-out {
+    to { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .${BOX_CLASS}, .${BOX_CLASS}.closing { animation: none; }
+  }
 `;
 
 const escapeHTML = (s) => foundry.utils.escapeHTML?.(String(s)) ?? String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -127,30 +148,47 @@ function playCry(actor) {
   }
 }
 
-/** The prompt config with the Pokémon's picture next to the text. */
-function withSprite(config, actor) {
+/** Open the portrait window; returns a function that closes it (or null if there's no picture). */
+export function openPortrait(actor) {
   const src = spriteOf(actor);
-  if (!src) return config;
-  const content =
-    `<div class="ptre1-fm-cry">` +
-    `<img class="ptre1-fm-cry-sprite" src="${escapeHTML(src)}" alt="${escapeHTML(actor.name)}">` +
-    `<div class="ptre1-fm-cry-text">${config.content}</div>` +
-    `</div>`;
-  return { ...config, content };
+  if (!src) return null;
+  const box = document.createElement("div");
+  box.className = BOX_CLASS;
+  box.setAttribute("aria-hidden", "true");
+  box.innerHTML = `<div class="ptre1-fm-portrait-inner"><img src="${escapeHTML(src)}" alt=""></div>`;
+  document.body.append(box);
+
+  // Centre over the text box once it has rendered: horizontally on it, vertically
+  // in the space above it. Without one, the CSS default (centre of the canvas area) stays.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const footer = [...document.querySelectorAll(".dga.footer-dialog")].at(-1);
+    const rect = footer?.getBoundingClientRect?.();
+    if (!rect?.width || rect.top <= 0) return;
+    box.style.left = `${rect.left + rect.width / 2}px`;
+    box.style.top = `${rect.top / 2}px`;
+  }));
+
+  let closed = false;
+  return () => {
+    if (closed) return;
+    closed = true;
+    box.classList.add("closing");
+    setTimeout(() => box.remove(), 160);
+  };
 }
 
-/** Returns the (possibly changed) prompt config; plays the cry as a side effect. */
-export function decoratePrompt(config) {
+/** For a field move's "used" prompt: play the cry, open the portrait, return its closer. */
+export function presentFieldMove(config) {
   const hit = parseUsedPrompt(config);
-  if (!hit) return config;
+  if (!hit) return null;
   const actor = findPokemon(hit.name, hit.logicFn);
-  if (!actor) return config;
+  if (!actor) return null;
   try {
     playCry(actor);
   } catch (err) {
     console.error(`${MODULE_ID} | Field move cry: could not play ${actor.name}'s cry`, err);
   }
-  return withSprite(config, actor);
+  return openPortrait(actor);
 }
 
 // Wraps rather than replaces, so switching the feature off live hands back to DGA's prompt.
@@ -159,14 +197,22 @@ function install(module) {
   const original = scripts?.FooterDialogPrompt;
   if (typeof original !== "function" || original.ptre1CryWrapped) return;
   const wrapped = function (config, ...rest) {
+    let close = null;
     if (featureEnabled("fieldMoveCry")) {
       try {
-        config = decoratePrompt(config);
+        close = presentFieldMove(config);
       } catch (err) {
         console.error(`${MODULE_ID} | Field move cry failed; showing the plain message.`, err);
       }
     }
-    return original.call(this, config, ...rest);
+    if (!close) return original.call(this, config, ...rest);
+    // The portrait stays up exactly as long as the text box.
+    try {
+      return Promise.resolve(original.call(this, config, ...rest)).finally(close);
+    } catch (err) {
+      close();
+      throw err;
+    }
   };
   wrapped.ptre1CryWrapped = true;
   scripts.FooterDialogPrompt = wrapped;

@@ -101,7 +101,7 @@ export const FEATURES = [
   {
     id: "fieldMoveCry", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
     title: "Field move cry & picture",
-    description: "When a Pokémon uses a field move (Cut, Rock Smash, Strength, Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), shows its picture beside the 'used the move' text and plays its cry before the move goes ahead. The cry plays for you only, at the Cry volume in Dylan's volume settings.",
+    description: "When a Pokémon uses a field move (Cut, Rock Smash, Strength, Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), opens a framed window with its portrait in the middle of the screen and plays its cry, like talking to Pikachu in Pokémon Yellow. It closes with the 'used the move' text box, before the move goes ahead. Only the player using the move sees and hears it; the cry uses the Cry volume in Dylan's volume settings.",
   },
 ];
 

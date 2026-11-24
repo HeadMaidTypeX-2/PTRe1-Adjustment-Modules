@@ -121,9 +121,10 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   Needs Pokémon Assets and DGA. The world must be relaunched once so Foundry picks up the new
   behavior types.
 - **`field-move-cry.js`** — when a Pokémon uses a field move (Cut, Rock Smash, Strength,
-  Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), its picture appears beside the
-  "*name* used *move*!" text in DGA's footer box and its cry plays. The move goes ahead once
-  the box is dismissed, as before. The Pokémon is found by name in the controlled token's
+  Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), a framed window with its portrait opens
+  in the middle of the screen, above the "*name* used *move*!" text box, and its cry plays,
+  like talking to Pikachu in Pokémon Yellow. Both close together when the text is dismissed,
+  and only then does the move go ahead. The Pokémon is found by name in the controlled token's
   party (else among Pokémon you own); its picture is the actor image, else the species image;
   the cry comes from Pokémon Assets and plays for you only, at DGA's *Cry* volume. Trainers,
   or Pokémon that can't be identified, get the plain message. Needs Pokémon Assets and DGA.
