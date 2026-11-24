@@ -72,6 +72,11 @@ Independent components, each under `scripts/`.
    `glamour-weaver` with the item's `glamour-weaver-cr` slug, so a Class Rework Glamour
    Weaver never qualified for Fey Law. This affected 37 classes and 221 features.
 
+   Grouped prerequisites added in PTR 4.4.3.58 (`All A or B options` followed by `A: …` and
+   `B: …` lines, as on Type Ace (Dark) (Class Rework)) are checked as a whole: the feature
+   qualifies when every line of at least one group passes, and each line still gets the "or"
+   fixes above.
+
    The window still shows PTR's original text. Remove once fixed upstream.
 
 ### Pokémon Assets / Dylan's General Automations fixes
@@ -104,14 +109,167 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   `game.modules.get("PTRe1-Adjustment-Modules").api.removeLegacyClimbRegions()` deletes them.
   Needs Pokémon Assets and DGA. The world must be relaunched once so Foundry picks up the new
   behavior types.
+- **`field-move-cry.js`** — when a Pokémon uses a field move (Cut, Rock Smash, Strength,
+  Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), a framed window with its portrait opens
+  in the middle of the screen, above the "*name* used *move*!" text box, and its cry plays,
+  like talking to Pikachu in Pokémon Yellow. Both close together when the text is dismissed,
+  and only then does the move go ahead. The Pokémon is found by name in the controlled token's
+  party (else among Pokémon you own); its picture is the actor image, else the species image;
+  the cry comes from Pokémon Assets and plays for you only, at DGA's *Cry* volume. Trainers,
+  or Pokémon that can't be identified, get the plain message. Needs Pokémon Assets and DGA.
 - **`reinforcement-unlinked.js`** — DGA 1.0.8+ runs the Reinforcements Platform's triggers
   itself, including Round End, start round, wait-while-occupied and adding spawns to combat.
   This module's own Round End handler was removed, because running both spawned every
   platform twice. What remains is a per-tile **Spawn unlinked tokens** option, default on, shown
-  in the placement dialog and in DGA's Reinforcements section of Tile Config. PTR forces
-  actors to be linked, so without it every spawn from one actor shares one sheet. It covers all
+  in the placement dialog and in DGA's Reinforcements section of Tile Config. It covers all
   three triggers. Platforms configured with the old Round End fields have their start round
   copied into DGA's own setting on first load.
+
+
+### Scenes & regions
+
+- **`dialogue-trees.js`** — dialogue scripts played in the text box (DGA's footer box when DGA
+  is active, a Foundry dialog otherwise), on regions and tiles. As with DGA's field moves, each
+  text box opens with DGA's interaction sound, following its *Interact* volume and its
+  interact-sound setting.
+
+  **Regions:** add a **Dialogue** Region Behavior.
+  - *Start with*: **Interact** (default; face the region and press DGA's Interact key, Enter,
+    as with Surf and Rock Climb; needs DGA, otherwise walking in is used) or **Walking in**.
+  - *Block entry* (default on): tokens can't walk in until the dialogue ends in `!enter`; a
+    move into the region stops at its edge. With Interact, `!enter` steps the token one cell in;
+    with Walking in, it finishes the move. This is the boss-room threshold. Turned off, tokens
+    walk in freely and the dialogue simply plays: a sign, a warning, an NPC area.
+
+  **Tiles:** Tile Config has a **Dialogue** section (enable it, write the script). A token facing
+  the tile and pressing Interact plays it. Needs DGA. `!enter`/`!done` and `!stay` only matter
+  for *Ask again* on tiles.
+
+  The script, for example a threshold:
+
+  ```
+  [start]
+  !if not item:rising-badge -> unprepared
+  You feel an ominous presence beyond this threshold...
+  ---
+  Are you sure you are ready to proceed?
+  > Yes -> enter
+  > No -> leave
+
+  [unprepared]
+  Your Pokémon seem uneasy without the badge...
+  > Go in anyway -> weak
+  > Turn back -> leave
+
+  [weak]
+  !macro Boss Disadvantage
+  !enter
+
+  [enter]
+  !macro Boss Intro
+  !enter
+
+  [leave]
+  You tremble away from the threshold... for now.
+  !stay
+  ```
+
+  | Line | Meaning |
+  |---|---|
+  | `[name]` | starts a node; text before the first one belongs to `[start]` |
+  | text | a page; a blank line or `---` starts the next page |
+  | `> Label -> node` | a choice, shown with the node's last page |
+  | `> Label [check] -> node` | a choice offered only if the check passes |
+  | `-> node` | jump |
+  | `!if check -> node` | jump if the check passes, otherwise carry on |
+  | `!macro Name` | run a macro (name or UUID); it gets `actor`, `token`, `region`, `behavior`, `tile`, `node`, `party` |
+  | `!enter` (or `!done`) / `!stay` | end in success (let the token in) / end without (keep it out); a node that just ends counts as `!stay` |
+  | `// …` | comment |
+
+  **Text.** Inside any page or choice label:
+
+  | Markup | Result |
+  |---|---|
+  | `{red}…{/}` | colour: red, blue, green, yellow, orange, purple, pink, cyan, gray, white, black, gold, teal, brown, or `{#3cf}` / `{#e0b030}` |
+  | `{b}` `{i}` `{u}` `{big}` `{small}` | bold, italic, underline, larger, smaller |
+  | `{flash1}` `{flash2}` `{flash3}` | colour flashing: red/yellow, cyan/blue, green/light green |
+  | `{glow1}` `{glow2}` `{glow3}` | colour cycling: red→yellow→green→cyan, red→purple→blue, gray→green→cyan |
+  | `{rainbow}` | every letter cycles through the rainbow, one after another |
+  | `{wave}` `{wave2}` | letters bob up and down in a wave (`wave2` also sways sideways) |
+  | `{shake}` / `{jitter}` | the whole text trembles / each letter jitters on its own |
+  | `{pulse}` | grows and shrinks |
+  | `{scroll}` | scrolls across the box, right to left, on its own line |
+  | `{slide}` / `{fade}` | slides down into place / fades in, once |
+  | `{type}` | typewriter: letters appear one at a time |
+
+  `{/}` closes the latest effect; anything still open closes at the end of the page. Effects
+  combine, e.g. `{type}{wave}{red}It's coming…{/}{/}{/}` types out red, waving text. Motion
+  stops for players whose system asks for reduced motion.
+  | `{trainer}` `{pokemon}` `{lead}` `{actor}` `{user}` | the trainer, the token's Pokémon (or the party's first), the token's actor, the player |
+  | `{flag:x}` `{actor:x}` `{world:x}` | a memory flag's value |
+  | `@Name` / `@Name: text` / `@` | show "**Name:**" before the following pages / just this line onwards / stop |
+
+  **Commands.** Most take an optional `-> success | failure`: the dialogue jumps to the first
+  node on success, the second on failure, and carries on with the next line when that side is
+  left out (`-> | broke` only branches on failure).
+
+  | Command | Does | Succeeds when |
+  |---|---|---|
+  | `!portrait Pika` / `!portrait lead` / `!portrait pics/oak.webp` / `!portrait off` | the framed portrait window (as for field moves) beside the text box until changed, turned off, or the dialogue ends | it opened |
+  | `!sound sfx/door.ogg` | plays a sound for this player (DGA's Interact volume) | always |
+  | `!cry` / `!cry Pika` | plays a Pokémon's cry (Pokémon Assets); no name = the token's Pokémon | it played |
+  | `!roll athletics 15` | a real PTR skill check (chat card, modifiers, rule elements) against the DC; who rolls: `token` (default), `best` (highest rank in the party), `choose` (the player picks) | total ≥ DC |
+  | `!chance 30` | random, out of 100 | the roll is under 30 |
+  | `!pay 500` / `!earn 500` | takes / gives the trainer's money | there was enough |
+  | `!take "Old Key"` / `!take potion 2` | uses up owned items (by name, slug or UUID; deletes at 0) | the party had enough |
+  | `!give "Super Potion" 2` | gives the trainer an item (world item, compendium item by name, or UUID), stacking with one they have | it was found |
+  | `!set talked-to-elder` / `!set actor:petted 2` / `!set world:bridge-repaired` | stores a memory flag (true, a number, or a word) | it was saved |
+  | `!add badges-shown 1` / `!clear talked-to-elder` | adds to a number flag / removes a flag | it was saved |
+  | `!ask-gm "May they enter?"` | asks the GM; they get a Yes/No window | the GM said yes |
+
+  Names with spaces go in quotes. Rolls, costs and items use the party below; money and new
+  items go to the trainer. Players need to own the trainer for money and items.
+
+  **Checks** are PTR predicates tested against the whole party: the token's actor, its
+  trainer, and the trainer's unboxed Pokémon. Write `a, b` for both, `a | b` for either,
+  `not a`, or a JSON predicate. Available:
+
+  | Check | Meaning |
+  |---|---|
+  | the party's PTR roll options | anything PTR puts on the actors, e.g. `condition:fainted` |
+  | `item:<slug>` | someone owns the item, e.g. `item:rising-badge` |
+  | `species:<slug>`, `self:level:40+` | a Pokémon of that species / at least that level |
+  | `trainer:level:10+`, `party:size:3+` | the trainer's level / number of Pokémon |
+  | `skill:athletics:adept+` | someone has that rank (pathetic … virtuoso, or a number); skills by name, e.g. `skill:pokemon-education:expert+` |
+  | `flag:x`, `flag:x:3`, `flag:x:2+` | party memory: set / has that value / at least |
+  | `actor:x…`, `world:x…` | actor and world memory, the same way |
+  | `combat:active`, `combat:round:3+` | combat state |
+  | `scene:victory-road` | the scene being viewed |
+  | `time:day` / `time:night` (6:00–18:00 is day), `time:hour:20+`, `season:winter` | from Simple Calendar, or Foundry's clock without it |
+  | `user:gm` | the GM is the one talking |
+
+  **Memory flags** aren't tied to a scene: one set in one scene can be checked by any
+  dialogue in any other.
+  - **Party** (`!set x`): stored on the trainer, shared by their Pokémon. The default.
+  - **Actor** (`!set actor:x`): stored on the actor talking.
+  - **World** (`!set world:x`): shared by everyone. Players' world writes go through the GM's
+    client, so a GM must be connected. `!ask-gm` needs one too.
+
+  The GM can manage memory from the console with
+  `game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.memory`:
+  - `list("Red")` shows world, party and actor flags for Red.
+  - `set("talked-to-elder", true, "Red")` sets a party flag for Red's party.
+  - `set("world:bridge-repaired")` sets a world flag.
+  - `clear("actor:petted", "Pika")` removes a flag.
+  - `wipe("world" | "actors" | "all")` clears memory in bulk.
+
+  *Ask again* (regions and tiles) picks whether a dialogue that ended in `!enter`/`!done` plays
+  again: every time, once per token, or once per actor.
+  `game.modules.get("PTRe1-Adjustment-Modules").api.dialogues.reset()` makes everyone answer
+  again. On regions, GM moves aren't blocked and don't start Walking-in dialogues unless *Ask
+  the GM too* is on; pressing Interact always works. The world must be relaunched once so
+  Foundry picks up the new behavior type and the module's socket (used for world flags and
+  `!ask-gm`).
 
 ### Rule elements & mechanics
 

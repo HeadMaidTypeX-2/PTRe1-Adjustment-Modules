@@ -43,6 +43,10 @@
  * Also fixes the class gate for multi-word Class Rework classes (Glamour
  * Weaver -> Fey Law): see augmentContext().
  *
+ * Grouped lists ("All A or B options" + "A: …" / "B: …" lines, PTR 4.4.3.58)
+ * are evaluated as a whole by groupedMet(), with each line still getting the
+ * OR repairs above. Splitting them line by line would hide the feature.
+ *
  * Remove once upstream splits OR before pattern-matching in checkSinglePrereq,
  * matches classes by sluggified name, and the pack typos are fixed.
  */
@@ -70,6 +74,10 @@ const GROUP_PASS = "Level 1";
 const ALL_OPTIONS_RE = /^All [A-Z](?: or [A-Z])+ options$/i;
 const GROUP_MEMBER_RE = /^([A-Z]):\s*(.+)$/is;
 const NEGATION_RE = /^does not have /i;
+
+/** Same as prereq-checker.js (4.4.3.58): the grouped-options meta-line and its members. */
+const ALL_OPTIONS_RE = /^All [A-Z](?: or [A-Z])+ options$/i;
+const GROUP_MEMBER_RE = /^([A-Z]):\s*(.+)$/i;
 
 const RANKED_RE = new RegExp(`^((?:[A-Z]:\\s*)?(?:${RANKS}) )(.+)$`, "i");
 /** "Adept in 2 Rogue Skills" — the class feature's own prerequisite skills. */
@@ -257,12 +265,65 @@ function labelMet(groups, ctx) {
   return groups.every((options) => options.some((terms) => terms.every((t) => termMet(t, ctx))));
 }
 
+/** One prerequisite line, with this file's OR repairs when it needs them. */
+function linePasses(label, ctx) {
+  const groups = optionsFor(label);
+  return groups ? labelMet(groups, ctx) : termMet(label, ctx);
+}
+
+/** Labels with "or …" continuation entries joined to the entry before them. */
+function joinContinuations(prereqs) {
+  const labels = [];
+  for (const p of prereqs) {
+    const label = typeof p?.label === "string" ? p.label.trim() : "";
+    if (labels.length && /^or\s/i.test(label)) labels[labels.length - 1] += ` ${label}`;
+    else labels.push(label);
+  }
+  return labels;
+}
+
+/**
+ * Grouped prerequisites (PTR 4.4.3.58+, e.g. Type Ace (Dark) Class Rework):
+ *   "All A or B options", "A: 2 Different Dark Type Pokemon", "A: Novice Guile or Stealth", "B: …"
+ * Every ungrouped line must pass, and so must every line of at least one group.
+ * Returns true/false, or null when the entry has no "All … options" line.
+ *
+ * These lists are resolved as a whole: splitting the meta-line on " or ", or
+ * replacing an "A:" line with a stand-in, would break PTR's own grouping.
+ */
+function groupedMet(prereqs, ctx) {
+  const labels = joinContinuations(prereqs);
+  if (!labels.some((l) => ALL_OPTIONS_RE.test(l))) return null;
+  const groups = new Map();
+  const ungrouped = [];
+  for (const label of labels) {
+    if (!label || ALL_OPTIONS_RE.test(label)) continue;
+    const member = label.match(GROUP_MEMBER_RE);
+    if (member) {
+      const key = member[1].toUpperCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(member[2].trim());
+    } else {
+      ungrouped.push(label);
+    }
+  }
+  if (!ungrouped.every((l) => linePasses(l, ctx))) return false;
+  return !groups.size || [...groups.values()].some((lines) => lines.every((l) => linePasses(l, ctx)));
+}
+
 /** Copy of `entries` with every repaired prerequisite pre-resolved for this actor. */
 function resolveEntries(entries, ctx, originals) {
   if (!Array.isArray(entries)) return entries;
   return entries.map((entry) => {
     const prereqs = entry?.prerequisites;
     if (!Array.isArray(prereqs) || !prereqs.length) return entry;
+
+    const grouped = groupedMet(prereqs, ctx);
+    if (grouped !== null) {
+      if (entry.uuid) originals.set(entry.uuid, prereqs);
+      return { ...entry, prerequisites: [{ ...prereqs[0], label: grouped ? PASS : FAIL }] };
+    }
+
     let changed = false;
     const next = [];
     for (let i = 0; i < prereqs.length; i++) {

@@ -40,6 +40,13 @@ export const FEATURES = [
   },
 
 
+  // --- Scenes & regions -----------------------------------------------------
+  {
+    id: "dialogues", group: "Scenes & regions", live: true,
+    title: "Dialogue trees (regions & tiles)",
+    description: "Dialogue scripts played in the text box, with pages, coloured and styled text, speakers and portraits, choices, checks against the party (PTR predicates such as item:rising-badge, self:level:40+ or skill:athletics:adept+), PTR skill rolls, random chances, money and item costs, memory flags that persist across scenes (party, actor or world), GM approval, sounds, cries and macros. On regions, as a Dialogue Region Behavior started by Interact (facing it and pressing Enter) or by walking in, optionally blocking entry until the dialogue lets the token in, like a boss-room threshold. On tiles, from a Dialogue section in Tile Config, started by Interact. Uses Dylan's footer text box when DGA is active. Turning this off stops all dialogues and blocking; the settings stay on the regions and tiles.",
+  },
+
   // --- Integrations ---------------------------------------------------------
   {
     id: "aaUserShim", group: "Module integrations", live: false,
@@ -87,6 +94,11 @@ export const FEATURES = [
     id: "fieldMoveRegions", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
     title: "Rock Climb & Waterfall region behaviors",
     description: "Replaces Pokémon Assets' 'Place Climbable Rocks' / 'Place Waterfall' region tools with Rock Climb and Waterfall Region Behaviors that work like Surf: tokens can't walk in, and facing the region and pressing Interact crosses it in a straight line if the party knows the move. Turning this off brings the old tools back and makes the behaviors inert (they stay available so existing regions remain valid).",
+  },
+  {
+    id: "fieldMoveCry", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
+    title: "Field move cry & picture",
+    description: "When a Pokémon uses a field move (Cut, Rock Smash, Strength, Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), opens a framed window with its portrait in the middle of the screen and plays its cry, like talking to Pikachu in Pokémon Yellow. It closes with the 'used the move' text box, before the move goes ahead. Only the player using the move sees and hears it; the cry uses the Cry volume in Dylan's volume settings.",
   },
 ];
 
