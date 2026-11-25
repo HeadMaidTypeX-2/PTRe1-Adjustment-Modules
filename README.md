@@ -121,8 +121,10 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   player. Make a Script macro containing
   `game.modules.get("PTRe1-Adjustment-Modules").api.cry()`, select one or more Pokémon tokens
   and run it. It asks for a line (`{name}` is the Pokémon's name; blank means "*name*!"), then
-  each Pokémon cries in turn. Everyone hears the cry at their own *Cry* volume and closes their
-  own text box. Pass the line to skip the question: `api.cry({ text: "{name} roars!" })`.
+  each Pokémon cries in turn. Everyone hears the cry at their own *Cry* volume. Whoever ran it
+  controls the pace: the other players' text boxes have no button and close when the runner
+  dismisses theirs (or if the runner disconnects). Pass the line to skip the question:
+  `api.cry({ text: "{name} roars!" })`.
   Turning the feature off shows it to the player who ran it only. Needs Pokémon Assets and DGA.
 - **`reinforcement-unlinked.js`** — DGA 1.0.8+ runs the Reinforcements Platform's triggers
   itself, including Round End, start round, wait-while-occupied and adding spawns to combat.

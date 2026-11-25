@@ -103,7 +103,7 @@ export const FEATURES = [
   {
     id: "pokemonCry", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
     title: "Pokémon cry for everyone (macro)",
-    description: "The cry macro (api.cry()) shows the selected Pokémon's framed portrait, plays its cry and puts a line in the text box for every connected player, each at their own Cry volume and closing their own box. Turning this off shows it to the player who ran the macro only.",
+    description: "The cry macro (api.cry()) shows the selected Pokémon's framed portrait, plays its cry and puts a line in the text box for every connected player, each at their own Cry volume. Whoever ran it controls the pace: everyone else's box closes when they dismiss theirs. Turning this off shows it to the player who ran the macro only.",
   },
 ];
 
