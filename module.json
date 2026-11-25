@@ -25,6 +25,7 @@
     "scripts/trainer-prereq-or-fix.js",
     "scripts/field-move-regions.js",
     "scripts/field-move-cry.js",
+    "scripts/pokemon-cry.js",
     "scripts/dialogue-trees.js",
     "scripts/battle-transitions-fix.js"
   ],

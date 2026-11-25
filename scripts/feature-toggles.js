@@ -100,6 +100,11 @@ export const FEATURES = [
     title: "Field move cry & picture",
     description: "When a Pokémon uses a field move (Cut, Rock Smash, Strength, Whirlpool, Rock Climb, Waterfall, Headbutt, Surf), opens a framed window with its portrait in the middle of the screen and plays its cry, like talking to Pikachu in Pokémon Yellow. It closes with the 'used the move' text box, before the move goes ahead. Only the player using the move sees and hears it; the cry uses the Cry volume in Dylan's volume settings.",
   },
+  {
+    id: "pokemonCry", group: "Pokémon Assets / Dylan's General Automations", live: true, requires: ["dylans-general-automations", "pokemon-assets"],
+    title: "Pokémon cry for everyone (macro)",
+    description: "The cry macro (api.cry()) shows the selected Pokémon's framed portrait, plays its cry and puts a line in the text box for every connected player, each at their own Cry volume and closing their own box. Turning this off shows it to the player who ran the macro only.",
+  },
 ];
 
 const byId = new Map(FEATURES.map((f) => [f.id, f]));

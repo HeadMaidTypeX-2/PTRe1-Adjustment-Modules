@@ -137,7 +137,11 @@ export function spriteOf(actor) {
 }
 
 export function playCry(actor) {
-  const src = game.modules.get(POKEMON_ASSETS)?.api?.logic?.ActorCry?.(actor);
+  playCrySrc(game.modules.get(POKEMON_ASSETS)?.api?.logic?.ActorCry?.(actor));
+}
+
+/** Play a cry file for this user only, at DGA's "Cry" volume. */
+export function playCrySrc(src) {
   if (!src) return;
   const volume = game.modules.get(DGA)?.api?.VolumeSettings?.getVolume?.("cry") ?? 0.8;
   if (!(volume > 0)) return;

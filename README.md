@@ -117,6 +117,13 @@ Each is a no-op unless Dylan's General Automations (DGA) is active.
   party (else among Pokémon you own); its picture is the actor image, else the species image;
   the cry comes from Pokémon Assets and plays for you only, at DGA's *Cry* volume. Trainers,
   or Pokémon that can't be identified, get the plain message. Needs Pokémon Assets and DGA.
+- **`pokemon-cry.js`** — the same portrait, cry and text box on demand, for every connected
+  player. Make a Script macro containing
+  `game.modules.get("PTRe1-Adjustment-Modules").api.cry()`, select one or more Pokémon tokens
+  and run it. It asks for a line (`{name}` is the Pokémon's name; blank means "*name*!"), then
+  each Pokémon cries in turn. Everyone hears the cry at their own *Cry* volume and closes their
+  own text box. Pass the line to skip the question: `api.cry({ text: "{name} roars!" })`.
+  Turning the feature off shows it to the player who ran it only. Needs Pokémon Assets and DGA.
 - **`reinforcement-unlinked.js`** — DGA 1.0.8+ runs the Reinforcements Platform's triggers
   itself, including Round End, start round, wait-while-occupied and adding spawns to combat.
   This module's own Round End handler was removed, because running both spawned every
