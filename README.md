@@ -78,6 +78,11 @@ Independent components, each under `scripts/`.
    fixes above.
 
    The window still shows PTR's original text. Remove once fixed upstream.
+6. **`unlinked-attacker-fix.js`** — PTR's chat cards find the attacker and move only for a
+   linked token (`message/base.js` matches `Actor.<id>` only). When an unlinked token attacks,
+   such as a Reinforcements Platform spawn, Apply Damage fails with `item is null` and the
+   attacker's effects, drain and recoil are skipped. The card's actor and item lookups now fall
+   back to the stored UUID (`Scene.….Token.….Actor.…`). Remove once fixed upstream.
 
 ### Pokémon Assets / Dylan's General Automations fixes
 

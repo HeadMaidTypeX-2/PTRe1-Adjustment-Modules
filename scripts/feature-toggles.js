@@ -34,6 +34,11 @@ export const FEATURES = [
     description: "Extends PTR's native evolution predicates on level-up: extra roll options (stats and stat comparisons, loyalty, friendship, move types, party species from the trainer's Party folder, held items, user:gm), the source species' predicate as a fallback, a GM view of blocked evolutions with the reason, and consuming evolution items on confirm. A report of legacy evolution data PTR's migration dropped is available on demand: game.modules.get('PTRe1-Adjustment-Modules').api.legacyEvolutionReport() in the console.",
   },
   {
+    id: "unlinkedAttacker", group: "PTR system", live: true,
+    title: "Unlinked attackers in chat cards",
+    description: "PTR can only find a damage roll's attacker and move when the attacker is a linked token. For an unlinked token (e.g. a Reinforcements Platform spawn), Apply Damage fails with 'item is null' and the attacker's effects, drain and recoil are skipped. This finds the unlinked token's actor and move instead.",
+  },
+  {
     id: "trainerPrereqOr", group: "PTR system", live: false,
     title: "Trainer level-up OR prerequisites",
     description: "Fixes the Trainer Level-Up wizard so prerequisites with alternatives (\"Adept Guile or Stealth\", \"Level 10 or Two of …\") test every option, and reads several known PTR data typos. The window still shows PTR's original prerequisite text.",
